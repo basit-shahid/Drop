@@ -11,6 +11,8 @@ const PORT = 5000;
 app.use(cors());
 app.use(express.json());
 
+const DOWNLOAD_BASE = path.join(process.env.USERPROFILE, 'Documents', 'AndroidFiles');
+const FROM_PC_DIR = path.join(DOWNLOAD_BASE, 'FromPC');
 const DEVICES_FILE = path.join(DOWNLOAD_BASE, 'devices.json');
 
 // Ensure directories exist
