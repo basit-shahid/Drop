@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drop - File Receiver</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="drag-region"></div>
+    <div class="container">
+        <header>
+            <div class="header-main">
+                <div>
+                    <h1>Drop</h1>
+                    <p>Sync files across devices instantly</p>
+                </div>
+                <div class="header-actions">
+                    <button id="send-btn" class="action-btn secondary" title="Make files available for Phone to download">Send to Phone</button>
+                    <button id="open-folder-btn" class="action-btn">Files Folder</button>
+                </div>
+            </div>
+        </header>
+
+        <section class="status-card">
+            <div class="card-top">
+                <div class="ip-info">
+                    <span class="label">Server Address</span>
+                    <div class="ip-address" id="ip-display">Connecting...</div>
+                    <p class="hint">Scan QR to connect instantly</p>
+                </div>
+                <div class="qr-container">
+                    <canvas id="qr-canvas"></canvas>
+                </div>
+                <div class="status-indicator">
+                    <div class="dot active"></div>
+                    <span>Server Running</span>
+                </div>
+            </div>
+            <div id="global-progress" class="global-progress">
+                <div class="progress-header">
+                    <span id="progress-label">Receiving from <strong id="progress-device">...</strong></span>
+                    <span id="progress-percent">0%</span>
+                </div>
+                <div class="pc-progress-container">
+                    <div id="pc-progress-bar" class="pc-progress-bar"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="log-section">
+            <div class="section-header">
+                <h2>Recent Transfers</h2>
+                <span id="transfer-count">0 files received</span>
+            </div>
+            <div class="file-list" id="file-list">
+                <div class="empty-state">
+                    <p>No files received yet. Waiting for connections...</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="instructions">
+            <h3>How to use:</h3>
+            <ol>
+                <li>Make sure Android and PC are on the same Wi-Fi.</li>
+                <li>On Android, scan the QR code or go to: <code id="web-url">...</code></li>
+                <li>Enter a unique device name, select a file, and tap Upload.</li>
+            </ol>
+        </section>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        const QRCode = require('qrcode');
+        const fileList = document.getElementById('file-list');
+        const ipDisplay = document.getElementById('ip-display');
+        const webUrl = document.getElementById('web-url');
+        const transferCount = document.getElementById('transfer-count');
+        const openFolderBtn = document.getElementById('open-folder-btn');
+        const sendBtn = document.getElementById('send-btn');
+        const qrCanvas = document.getElementById('qr-canvas');
+        const globalProgress = document.getElementById('global-progress');
+        const progressDevice = document.getElementById('progress-device');
+        const progressPercent = document.getElementById('progress-percent');
+        const pcProgressBar = document.getElementById('pc-progress-bar');
+        
+        let count = 0;
+
+        openFolderBtn.addEventListener('click', () => {
+            ipcRenderer.send('open-folder');
+        });
+
+        sendBtn.addEventListener('click', () => {
+            ipcRenderer.send('select-files-to-phone');
+        });
+
+        ipcRenderer.on('files-sent-to-phone', () => {
+            alert('File(s) are now ready for your Phone to download!');
+        });
+
+        ipcRenderer.on('server-info', (event, info) => {
+            const url = `http://${info.ip}:${info.port}/`;
+            ipDisplay.innerText = `${url}upload`;
+            webUrl.innerText = url;
+
+            // Generate QR Code
+            QRCode.toCanvas(qrCanvas, url, {
+                width: 100,
+                margin: 2,
+                color: {
+                    dark: '#cdd6f4',
+                    light: '#1e1e2e'
+                }
+            }, (error) => {
+                if (error) console.error('QR Code error:', error);
+            });
+        });
+
+        ipcRenderer.on('upload-progress', (event, data) => {
+            globalProgress.classList.add('active');
+            progressDevice.innerText = data.deviceName;
+            progressPercent.innerText = data.progress + '%';
+            pcProgressBar.style.width = data.progress + '%';
+            
+            if (data.progress === 100) {
+                setTimeout(() => {
+                    globalProgress.classList.remove('active');
+                }, 2000);
+            }
+        });
+
+        ipcRenderer.on('file-received', (event, file) => {
+            if (count === 0) fileList.innerHTML = '';
+            count++;
+            transferCount.innerText = `${count} file${count > 1 ? 's' : ''} received`;
+
+            const item = document.createElement('div');
+            item.className = 'file-item';
+            item.innerHTML = `
+                <div class="file-icon">📄</div>
+                <div class="file-details">
+                    <div class="filename">${file.filename}</div>
+                    <div class="device-info">From: ${file.device} <span class="badge">${file.category}</span></div>
+                </div>
+                <div class="file-meta">
+                    <div class="time">${file.time}</div>
+                </div>
+            `;
+            fileList.prepend(item);
+        });
+    </script>
+</body>
+</html>
