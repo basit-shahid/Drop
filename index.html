@@ -106,11 +106,11 @@
 
             // Generate QR Code
             QRCode.toCanvas(qrCanvas, url, {
-                width: 100,
+                width: 200,
                 margin: 2,
                 color: {
-                    dark: '#cdd6f4',
-                    light: '#1e1e2e'
+                    dark: '#000000',
+                    light: '#ffffff'
                 }
             }, (error) => {
                 if (error) console.error('QR Code error:', error);

@@ -9,37 +9,44 @@ let mainWindow;
 let tunnel;
 let tunnelUrl = null;
 
+const { spawn } = require('child_process');
+
 async function startTunnel(port) {
     try {
-        console.log(`[Tunnel] Initializing Cloudflare tunnel for port ${port}...`);
+        console.log(`[Tunnel] Spawning Cloudflare tunnel for port ${port}...`);
         
-        // Start the tunnel
-        tunnel = cloudflared.tunnel({ '--url': `http://127.0.0.1:${port}` });
+        // Manual spawn gives us direct access to output for parsing
+        const tunnelProcess = spawn('npx', ['cloudflared', 'tunnel', '--url', `http://127.0.0.1:${port}`], { shell: true });
         
-        if (!tunnel) {
-            console.error('[Tunnel] Failed to create tunnel object');
-            return;
-        }
-
-        tunnel.on('url', (url) => {
-            tunnelUrl = url;
-            console.log('[Tunnel] Public URL generated:', url);
-            if (mainWindow) {
-                mainWindow.webContents.send('public-url', url);
+        tunnelProcess.stderr.on('data', (data) => {
+            const output = data.toString();
+            // Look for the quick tunnel URL
+            const urlMatch = output.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+            if (urlMatch) {
+                tunnelUrl = urlMatch[0];
+                console.log('[Tunnel] Captured URL:', tunnelUrl);
+                if (mainWindow) {
+                    mainWindow.webContents.send('public-url', tunnelUrl);
+                }
             }
         });
 
-        tunnel.on('error', (err) => {
-            console.error('[Tunnel] Error occurred:', err);
+        tunnelProcess.on('error', (err) => {
+            console.error('[Tunnel] Process error:', err);
         });
 
-        tunnel.on('close', () => {
-            console.log('[Tunnel] Process closed');
+        tunnelProcess.on('close', (code) => {
+            console.log('[Tunnel] Process exited with code', code);
             tunnelUrl = null;
         });
 
+        // Ensure tunnel dies when electron app quits
+        app.on('before-quit', () => {
+            if (tunnelProcess) tunnelProcess.kill();
+        });
+
     } catch (err) {
-        console.error('[Tunnel] Spawn error:', err);
+        console.error('[Tunnel] Spawn logic error:', err);
     }
 }
 

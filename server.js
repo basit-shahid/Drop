@@ -139,16 +139,17 @@ function setupServer(mainWindow) {
                 <title>Drop - Upload</title>
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <style>
-                    body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #1e1e2e; color: white; }
-                    .card { background: #313244; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; width: 90%; max-width: 400px; }
-                    input[type="file"] { margin: 1rem 0; }
-                    button { background: #89b4fa; border: none; padding: 0.8rem 2rem; border-radius: 50px; color: #1e1e2e; font-weight: bold; cursor: pointer; transition: opacity 0.2s; }
-                    button:disabled { opacity: 0.5; cursor: not-allowed; }
-                    input[type="text"] { background: #45475a; border: 1px solid #585b70; color: white; padding: 0.5rem; border-radius: 5px; margin-bottom: 0.5rem; width: 100%; box-sizing: border-box; }
-                    #error-msg { color: #f38ba8; font-size: 0.8rem; margin-bottom: 1rem; display: none; }
-                    .progress-container { width: 100%; background: #45475a; border-radius: 10px; height: 10px; margin: 1rem 0; display: none; overflow: hidden; }
-                    .progress-bar { height: 100%; background: #89b4fa; width: 0%; transition: width 0.2s; }
-                    #status-text { font-size: 0.8rem; color: #a6adc8; margin-top: 0.5rem; }
+                    body { font-family: 'Inter', system-ui, sans-serif; background: #000000; color: #ffffff; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; margin: 0; }
+                    .card { background: #0a0a0a; padding: 2.5rem; border-radius: 12px; border: 1px solid #222222; width: 100%; max-width: 400px; text-align: center; }
+                    h1 { font-size: 1.8rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.05em; margin-bottom: 2rem; margin-top: 0; }
+                    p { font-size: 0.9rem; color: #888888; margin-bottom: 1.5rem; }
+                    input[type="text"], input[type="file"] { width: 100%; background: #111111; border: 1px solid #222222; color: #ffffff; padding: 0.8rem; border-radius: 4px; margin-bottom: 1rem; font-size: 0.9rem; outline: none; box-sizing: border-box; }
+                    button { width: 100%; background: #ffffff; color: #000000; border: none; padding: 1rem; border-radius: 4px; font-weight: 700; cursor: pointer; transition: opacity 0.2s; font-size: 0.9rem; text-transform: uppercase; }
+                    button:disabled { opacity: 0.5; }
+                    #error-msg { color: #ffffff; font-size: 0.8rem; margin-bottom: 1rem; border: 1px solid #ff0000; padding: 0.5rem; display: none; }
+                    .progress-container { width: 100%; height: 2px; background: #222222; margin: 1.5rem 0; display: none; overflow: hidden; }
+                    .progress-bar { height: 100%; background: #ffffff; width: 0%; transition: width 0.1s; }
+                    #status-text { font-size: 0.75rem; color: #888888; margin-top: 0.5rem; text-transform: uppercase; font-weight: 700; }
                 </style>
             </head>
             <body>
