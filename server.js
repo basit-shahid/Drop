@@ -11,14 +11,29 @@ const PORT = 5000;
 app.use(cors());
 app.use(express.json());
 
-// Base directories
-const DOWNLOAD_BASE = path.join(process.env.USERPROFILE, 'Documents', 'AndroidFiles');
-const FROM_PC_DIR = path.join(DOWNLOAD_BASE, 'FromPC');
+const DEVICES_FILE = path.join(DOWNLOAD_BASE, 'devices.json');
 
 // Ensure directories exist
 [DOWNLOAD_BASE, FROM_PC_DIR].forEach(dir => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
+
+function getKnownDevices() {
+    if (!fs.existsSync(DEVICES_FILE)) return [];
+    try {
+        return JSON.parse(fs.readFileSync(DEVICES_FILE, 'utf8'));
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveDevice(name) {
+    const devices = getKnownDevices();
+    if (!devices.includes(name)) {
+        devices.push(name);
+        fs.writeFileSync(DEVICES_FILE, JSON.stringify(devices, null, 2));
+    }
+}
 
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
@@ -120,6 +135,10 @@ function setupServer(mainWindow) {
         }
     });
 
+    app.get('/known-devices', (req, res) => {
+        res.json(getKnownDevices());
+    });
+
     app.get('/check-device/:name', (req, res) => {
         const deviceName = req.params.name.trim().toLowerCase().replace(/[^a-z0-9_-]/gi, '_');
         const deviceDir = path.join(DOWNLOAD_BASE, deviceName);
@@ -127,6 +146,7 @@ function setupServer(mainWindow) {
         if (fs.existsSync(deviceDir)) {
             res.json({ available: false });
         } else {
+            saveDevice(req.params.name.trim()); // Persist to devices.json
             res.json({ available: true });
         }
     });
@@ -160,6 +180,7 @@ function setupServer(mainWindow) {
                         <input type="text" id="dn-input" placeholder="e.g. My Phone" required>
                         <div id="error-msg"></div>
                         <button id="reg-btn" onclick="registerDevice()">Register</button>
+                        <div id="known-devices-view"></div>
                     </div>
                     <div id="upload-view" style="display: none;">
                         <p>Linked as <strong id="device-display"></strong></p>
@@ -205,7 +226,27 @@ function setupServer(mainWindow) {
                         } else {
                             regView.style.display = 'block';
                             upView.style.display = 'none';
+                            fetchKnownDevices();
                         }
+                    }
+
+                    async function fetchKnownDevices() {
+                        const view = document.getElementById('known-devices-view');
+                        try {
+                            const res = await fetch('/known-devices');
+                            const devices = await res.json();
+                            if (devices.length > 0) {
+                                view.innerHTML = '<p style="margin-top: 2rem; font-size: 0.7rem; color: #444;">Recently used names</p>' +
+                                    '<div style="display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center;">' +
+                                    devices.map(d => '<button class="secondary" style="width: auto; padding: 0.5rem 1rem; font-size: 0.7rem;" onclick="selectDevice(\'' + d + '\')">' + d + '</button>').join('') +
+                                    '</div>';
+                            }
+                        } catch (e) {}
+                    }
+
+                    function selectDevice(name) {
+                        dnInput.value = name;
+                        registerDevice();
                     }
 
                     async function fetchPcFiles() {
