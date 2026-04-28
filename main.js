@@ -3,29 +3,43 @@ const path = require('path');
 const { setupServer } = require('./server');
 const ip = require('ip');
 const cloudflared = require('cloudflared');
+const fs = require('fs');
 
 let mainWindow;
 let tunnel;
-
 let tunnelUrl = null;
 
 async function startTunnel(port) {
     try {
-        tunnel = cloudflared.tunnel({ '--url': `http://localhost:${port}` });
+        console.log(`[Tunnel] Initializing Cloudflare tunnel for port ${port}...`);
         
+        // Start the tunnel
+        tunnel = cloudflared.tunnel({ '--url': `http://127.0.0.1:${port}` });
+        
+        if (!tunnel) {
+            console.error('[Tunnel] Failed to create tunnel object');
+            return;
+        }
+
         tunnel.on('url', (url) => {
             tunnelUrl = url;
-            console.log('Tunnel started:', url);
+            console.log('[Tunnel] Public URL generated:', url);
             if (mainWindow) {
                 mainWindow.webContents.send('public-url', url);
             }
         });
 
         tunnel.on('error', (err) => {
-            console.error('Tunnel error:', err);
+            console.error('[Tunnel] Error occurred:', err);
         });
+
+        tunnel.on('close', () => {
+            console.log('[Tunnel] Process closed');
+            tunnelUrl = null;
+        });
+
     } catch (err) {
-        console.error('Failed to start tunnel:', err);
+        console.error('[Tunnel] Spawn error:', err);
     }
 }
 
@@ -81,7 +95,6 @@ ipcMain.on('open-folder', () => {
 
 ipcMain.on('select-files-to-phone', async () => {
     const { dialog } = require('electron');
-    const fs = require('fs');
     const result = await dialog.showOpenDialog(mainWindow, {
         properties: ['openFile', 'multiSelections']
     });

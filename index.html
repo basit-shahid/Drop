@@ -155,18 +155,36 @@
             if (currentMode === 'local') {
                 updateConnectionUI();
             }
+
+            // Show initialization status for remote
+            const addressInfo = document.querySelector('.ip-info');
+            if (addressInfo && !document.getElementById('public-status')) {
+                const initMsg = document.createElement('p');
+                initMsg.id = 'public-status-init';
+                initMsg.style.color = '#f9e2af';
+                initMsg.style.fontSize = '0.75rem';
+                initMsg.style.marginTop = '0.4rem';
+                initMsg.innerText = '○ Initializing Remote Tunnel...';
+                addressInfo.appendChild(initMsg);
+                
+                modeRemoteBtn.innerText = "🌐 Remote (Connecting...)";
+            }
         });
 
         ipcRenderer.on('public-url', (event, url) => {
             publicUrl = url;
             modeRemoteBtn.disabled = false;
+            modeRemoteBtn.innerText = "🌐 Remote Mode";
             modeRemoteBtn.title = "Share across networks";
             
             if (currentMode === 'remote') {
                 updateConnectionUI();
             }
 
-            // Status indicator
+            // Remove init status and add ready status
+            const initMsg = document.getElementById('public-status-init');
+            if (initMsg) initMsg.remove();
+
             const addressInfo = document.querySelector('.ip-info');
             if (addressInfo && !document.getElementById('public-status')) {
                 const statusMsg = document.createElement('p');
