@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const cors = require('cors');
 const { ipcMain } = require('electron');
 
@@ -11,7 +12,8 @@ const PORT = 5000;
 app.use(cors());
 app.use(express.json());
 
-const DOWNLOAD_BASE = path.join(process.env.USERPROFILE, 'Documents', 'AndroidFiles');
+// Robust path handling
+const DOWNLOAD_BASE = path.join(os.homedir(), 'Documents', 'AndroidFiles');
 const FROM_PC_DIR = path.join(DOWNLOAD_BASE, 'FromPC');
 const DEVICES_FILE = path.join(DOWNLOAD_BASE, 'devices.json');
 
@@ -23,7 +25,8 @@ const DEVICES_FILE = path.join(DOWNLOAD_BASE, 'devices.json');
 function getKnownDevices() {
     if (!fs.existsSync(DEVICES_FILE)) return [];
     try {
-        return JSON.parse(fs.readFileSync(DEVICES_FILE, 'utf8'));
+        const data = fs.readFileSync(DEVICES_FILE, 'utf8');
+        return JSON.parse(data);
     } catch (e) {
         return [];
     }
@@ -39,9 +42,7 @@ function saveDevice(name) {
 
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
-        // Check header first (for scripts), then body (for forms)
-        let deviceName = (req.headers['device-name'] || req.body['device-name'] || 'UnknownDevice').trim().toLowerCase();
-        
+        let deviceName = (req.headers['device-name'] || req.body['device-name'] || 'UnknownDevice').trim().replace(/[^a-z0-9_-]/gi, '_');
         const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
         
         let category = 'other';
@@ -55,11 +56,8 @@ const storage = multer.diskStorage({
             category = 'music';
         }
 
-        const deviceDir = path.join(DOWNLOAD_BASE, deviceName.replace(/[^a-z0-9_-]/gi, '_'), category);
-        
-        if (!fs.existsSync(deviceDir)) {
-            fs.mkdirSync(deviceDir, { recursive: true });
-        }
+        const deviceDir = path.join(DOWNLOAD_BASE, deviceName, category);
+        if (!fs.existsSync(deviceDir)) fs.mkdirSync(deviceDir, { recursive: true });
         cb(null, deviceDir);
     },
     filename: function (req, file, cb) {
@@ -74,7 +72,6 @@ function setupServer(mainWindow) {
     app.post('/upload', (req, res, next) => {
         let received = 0;
         const total = parseInt(req.headers['content-length'], 10);
-        
         let lastUpdate = 0;
         req.on('data', (chunk) => {
             received += chunk.length;
@@ -90,51 +87,20 @@ function setupServer(mainWindow) {
         });
         next();
     }, upload.array('file'), (req, res) => {
-        if (!req.files || req.files.length === 0) {
-            return res.status(400).send('No files uploaded.');
-        }
+        if (!req.files || req.files.length === 0) return res.status(400).send('No files uploaded.');
 
         req.files.forEach(file => {
             const info = {
                 filename: file.originalname,
-                device: (req.headers['device-name'] || req.body['device-name'] || 'UnknownDevice').trim().toLowerCase(),
+                device: (req.headers['device-name'] || req.body['device-name'] || 'UnknownDevice').trim(),
                 path: file.path,
                 category: path.basename(path.dirname(file.path)),
                 time: new Date().toLocaleTimeString()
             };
-
-            // Send info to UI
-            if (mainWindow) {
-                mainWindow.webContents.send('file-received', info);
-            }
+            if (mainWindow) mainWindow.webContents.send('file-received', info);
         });
 
-        if (req.headers['accept'] && req.headers['accept'].includes('application/json')) {
-            res.status(200).json({
-                message: `${req.files.length} files uploaded successfully`
-            });
-        } else {
-            res.send(`
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta name="viewport" content="width=device-width, initial-scale=1">
-                    <style>
-                        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #1e1e2e; color: white; }
-                        .card { background: #313244; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
-                        a { color: #89b4fa; text-decoration: none; border: 1px solid #89b4fa; padding: 0.5rem 1rem; border-radius: 50px; margin-top: 1rem; display: inline-block; }
-                    </style>
-                </head>
-                <body>
-                    <div class="card">
-                        <h1>Success!</h1>
-                        <p>${req.files.length} files were sent to PC.</p>
-                        <a href="/">Send more files</a>
-                    </div>
-                </body>
-                </html>
-            `);
-        }
+        res.status(200).json({ message: `${req.files.length} files uploaded` });
     });
 
     app.get('/known-devices', (req, res) => {
@@ -142,13 +108,13 @@ function setupServer(mainWindow) {
     });
 
     app.get('/check-device/:name', (req, res) => {
-        const deviceName = req.params.name.trim().toLowerCase().replace(/[^a-z0-9_-]/gi, '_');
-        const deviceDir = path.join(DOWNLOAD_BASE, deviceName);
-        
+        const name = req.params.name.trim();
+        const safeName = name.toLowerCase().replace(/[^a-z0-9_-]/gi, '_');
+        const deviceDir = path.join(DOWNLOAD_BASE, safeName);
         if (fs.existsSync(deviceDir)) {
             res.json({ available: false });
         } else {
-            saveDevice(req.params.name.trim()); // Persist to devices.json
+            saveDevice(name);
             res.json({ available: true });
         }
     });
@@ -158,7 +124,7 @@ function setupServer(mainWindow) {
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Drop - Upload</title>
+                <title>Drop</title>
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <style>
                     body { font-family: 'Inter', system-ui, sans-serif; background: #000000; color: #ffffff; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; margin: 0; }
@@ -168,10 +134,12 @@ function setupServer(mainWindow) {
                     input[type="text"], input[type="file"] { width: 100%; background: #111111; border: 1px solid #222222; color: #ffffff; padding: 0.8rem; border-radius: 4px; margin-bottom: 1rem; font-size: 0.9rem; outline: none; box-sizing: border-box; }
                     button { width: 100%; background: #ffffff; color: #000000; border: none; padding: 1rem; border-radius: 4px; font-weight: 700; cursor: pointer; transition: opacity 0.2s; font-size: 0.9rem; text-transform: uppercase; }
                     button:disabled { opacity: 0.5; }
+                    button.secondary { background: transparent; color: #ffffff; border: 1px solid #222222; margin-top: 0.5rem; }
                     #error-msg { color: #ffffff; font-size: 0.8rem; margin-bottom: 1rem; border: 1px solid #ff0000; padding: 0.5rem; display: none; }
                     .progress-container { width: 100%; height: 2px; background: #222222; margin: 1.5rem 0; display: none; overflow: hidden; }
                     .progress-bar { height: 100%; background: #ffffff; width: 0%; transition: width 0.1s; }
                     #status-text { font-size: 0.75rem; color: #888888; margin-top: 0.5rem; text-transform: uppercase; font-weight: 700; }
+                    .pc-file-item { background: #111; border: 1px solid #222; padding: 0.8rem; border-radius: 4px; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; }
                 </style>
             </head>
             <body>
@@ -194,14 +162,12 @@ function setupServer(mainWindow) {
                             <div id="status-text"></div>
                             <button onclick="uploadFile()" id="upload-btn">Upload Files</button>
                         </div>
-                        <button id="reset-btn" onclick="clearRegistration()" style="background: transparent; color: #a6adc8; font-size: 0.7rem; margin-top: 1rem; border: 1px solid #585b70; padding: 0.3rem 0.6rem; border-radius: 5px;">Reset Name</button>
+                        <button id="reset-btn" onclick="clearRegistration()" style="background: transparent; color: #888; font-size: 0.7rem; margin-top: 1rem; border: 1px solid #222; padding: 0.3rem 0.6rem; border-radius: 4px;">Reset Name</button>
                         
-                        <div id="pc-files-view" style="margin-top: 2rem; border-top: 1px solid #45475a; padding-top: 1rem;">
-                            <h3 style="font-size: 1rem; margin-bottom: 1rem;">Files from PC</h3>
-                            <div id="pc-file-list" style="text-align: left; margin-bottom: 1rem;">
-                                <p style="color: #6c7086; font-size: 0.8rem;">Loading files...</p>
-                            </div>
-                            <button onclick="fetchPcFiles()" style="background: transparent; color: #89b4fa; border: 1px solid #89b4fa; padding: 0.3rem 0.6rem; font-size: 0.7rem; width: auto;">Refresh List</button>
+                        <div id="pc-files-view" style="margin-top: 2rem; border-top: 1px solid #222; padding-top: 1rem;">
+                            <h3 style="font-size: 0.9rem; margin-bottom: 1rem; text-transform: uppercase;">Files from PC</h3>
+                            <div id="pc-file-list" style="text-align: left; margin-bottom: 1rem;"></div>
+                            <button onclick="fetchPcFiles()" class="secondary" style="font-size: 0.7rem; padding: 0.5rem;">Refresh List</button>
                         </div>
                     </div>
                 </div>
@@ -219,11 +185,11 @@ function setupServer(mainWindow) {
                     const resetBtn = document.getElementById('reset-btn');
 
                     function checkRegistration() {
-                        const savedDn = localStorage.getItem('drop-device-name');
-                        if (savedDn) {
+                        const name = localStorage.getItem('drop-device-name');
+                        if (name) {
                             regView.style.display = 'none';
                             upView.style.display = 'block';
-                            dnDisplay.innerText = savedDn;
+                            dnDisplay.innerText = name;
                             fetchPcFiles();
                         } else {
                             regView.style.display = 'block';
@@ -238,9 +204,9 @@ function setupServer(mainWindow) {
                             const res = await fetch('/known-devices');
                             const devices = await res.json();
                             if (devices.length > 0) {
-                                view.innerHTML = '<p style="margin-top: 2rem; font-size: 0.7rem; color: #444;">Recently used names</p>' +
+                                view.innerHTML = '<p style="margin-top: 1.5rem; font-size: 0.7rem; color: #444;">Quick Sync</p>' +
                                     '<div style="display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center;">' +
-                                    devices.map(d => '<button class="secondary" style="width: auto; padding: 0.5rem 1rem; font-size: 0.7rem;" onclick="selectDevice(\'' + d + '\')">' + d + '</button>').join('') +
+                                    devices.map(d => '<button class="secondary" style="width: auto; padding: 0.5rem; font-size: 0.7rem;" onclick="selectDevice(\\'' + d + '\\')">' + d + '</button>').join('') +
                                     '</div>';
                             }
                         } catch (e) {}
@@ -249,29 +215,6 @@ function setupServer(mainWindow) {
                     function selectDevice(name) {
                         dnInput.value = name;
                         registerDevice();
-                    }
-
-                    async function fetchPcFiles() {
-                        const list = document.getElementById('pc-file-list');
-                        try {
-                            const res = await fetch('/pc-files');
-                            const files = await res.json();
-                            if (files.length === 0) {
-                                list.innerHTML = '<p style="color: #6c7086; font-size: 0.8rem;">No files from PC yet.</p>';
-                                return;
-                            }
-                            list.innerHTML = files.map(f => {
-                                return '<div style="background: #45475a; padding: 0.8rem; border-radius: 12px; margin-bottom: 0.6rem; display: flex; justify-content: space-between; align-items: center;">' +
-                                    '<div style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 10px;">' +
-                                        '<div style="font-size: 0.85rem; font-weight: bold; color: #cdd6f4;">' + f.name + '</div>' +
-                                        '<div style="font-size: 0.7rem; color: #a6adc8;">' + f.size + '</div>' +
-                                    '</div>' +
-                                    '<a href="/download/' + encodeURIComponent(f.name) + '" download style="background: #89b4fa; color: #1e1e2e; text-decoration: none; padding: 0.4rem 0.8rem; border-radius: 8px; font-size: 0.75rem; font-weight: bold;">Get</a>' +
-                                '</div>';
-                            }).join('');
-                        } catch (err) {
-                            list.innerHTML = '<p style="color: #f38ba8; font-size: 0.8rem;">Error loading files.</p>';
-                        }
                     }
 
                     async function registerDevice() {
@@ -290,67 +233,74 @@ function setupServer(mainWindow) {
                                 errMsg.style.display = 'block';
                             }
                         } catch (err) {
-                            errMsg.innerText = 'Server error';
+                            errMsg.innerText = 'Server offline or error';
                             errMsg.style.display = 'block';
                         } finally {
                             regBtn.disabled = false;
                         }
                     }
 
+                    async function fetchPcFiles() {
+                        const list = document.getElementById('pc-file-list');
+                        list.innerHTML = '<p style="color: #444; font-size: 0.75rem;">Updating...</p>';
+                        try {
+                            const res = await fetch('/pc-files');
+                            const files = await res.json();
+                            if (files.length === 0) {
+                                list.innerHTML = '<p style="color: #444; font-size: 0.75rem;">No files available.</p>';
+                                return;
+                            }
+                            list.innerHTML = files.map(f => \`
+                                <div class="pc-file-item">
+                                    <div style="flex: 1; overflow: hidden;">
+                                        <div style="font-size: 0.8rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">\${f.name}</div>
+                                        <div style="font-size: 0.65rem; color: #444;">\${f.size}</div>
+                                    </div>
+                                    <a href="/download/\${encodeURIComponent(f.name)}" download style="background: #fff; color: #000; text-decoration: none; padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.7rem; font-weight: 800;">GET</a>
+                                </div>
+                            \`).join('');
+                        } catch (err) {
+                            list.innerHTML = '<p style="color: #ff0000; font-size: 0.75rem;">Error.</p>';
+                        }
+                    }
+
                     function uploadFile() {
                         const fileInput = document.getElementById('file-input');
-                        const files = fileInput.files;
-                        if (files.length === 0) return;
-
-                        const deviceName = localStorage.getItem('drop-device-name');
+                        if (fileInput.files.length === 0) return;
+                        const name = localStorage.getItem('drop-device-name');
                         const formData = new FormData();
-                        for (let i = 0; i < files.length; i++) {
-                            formData.append('file', files[i]);
-                        }
-                        formData.append('device-name', deviceName);
+                        for (let f of fileInput.files) formData.append('file', f);
+                        formData.append('device-name', name);
 
                         const xhr = new XMLHttpRequest();
                         xhr.open('POST', '/upload', true);
-                        xhr.setRequestHeader('device-name', deviceName); // Also send in header for progress tracking
-
+                        xhr.setRequestHeader('device-name', name);
                         pContainer.style.display = 'block';
                         uploadBtn.disabled = true;
-                        resetBtn.style.display = 'none';
-
-                        const totalFiles = files.length;
                         xhr.upload.onprogress = (e) => {
                             if (e.lengthComputable) {
-                                const percent = Math.round((e.loaded / e.total) * 100);
-                                pBar.style.width = percent + '%';
-                                statusText.innerText = 'Uploading ' + totalFiles + ' file(s): ' + percent + '%';
+                                const p = Math.round((e.loaded / e.total) * 100);
+                                pBar.style.width = p + '%';
+                                statusText.innerText = 'Sending: ' + p + '%';
                             }
                         };
-
                         xhr.onload = () => {
-                            statusText.innerText = 'Success!';
+                            statusText.innerText = 'Uploaded!';
                             setTimeout(() => {
                                 pContainer.style.display = 'none';
                                 pBar.style.width = '0%';
                                 statusText.innerText = '';
                                 uploadBtn.disabled = false;
-                                resetBtn.style.display = 'inline-block';
                                 fileInput.value = '';
-                            }, 2000);
+                            }, 1500);
                         };
-
-                        xhr.onerror = () => {
-                            statusText.innerText = 'Upload failed!';
-                            uploadBtn.disabled = false;
-                            resetBtn.style.display = 'inline-block';
-                        };
-
                         xhr.send(formData);
                     }
 
                     function clearRegistration() {
-                        if (confirm('Change device name?')) {
+                        if (confirm('Logout?')) {
                             localStorage.removeItem('drop-device-name');
-                            checkRegistration();
+                            location.reload();
                         }
                     }
                     checkRegistration();
@@ -362,33 +312,23 @@ function setupServer(mainWindow) {
 
     app.get('/pc-files', (req, res) => {
         fs.readdir(FROM_PC_DIR, (err, files) => {
-            if (err) return res.status(500).json({ error: 'Cannot read directory' });
-            const fileInfos = files.map(f => {
-                const stats = fs.statSync(path.join(FROM_PC_DIR, f));
-                return { name: f, size: (stats.size / 1024 / 1024).toFixed(2) + ' MB' };
-            });
-            res.json(fileInfos);
+            if (err) return res.status(500).json([]);
+            res.json(files.map(f => {
+                const s = fs.statSync(path.join(FROM_PC_DIR, f));
+                return { name: f, size: (s.size / 1024 / 1024).toFixed(2) + ' MB' };
+            }));
         });
     });
 
     app.get('/download/:filename', (req, res) => {
-        const filePath = path.join(FROM_PC_DIR, req.params.filename);
-        if (fs.existsSync(filePath)) {
-            res.download(filePath);
-        } else {
-            res.status(404).send('File not found');
-        }
+        const p = path.join(FROM_PC_DIR, req.params.filename);
+        if (fs.existsSync(p)) res.download(p);
+        else res.status(404).send('Not found');
     });
 
-    app.get('/status', (req, res) => {
-        res.send('Server is running');
+    return app.listen(PORT, '0.0.0.0', () => {
+        console.log(`Server running at http://0.0.0.0:\${PORT}`);
     });
-
-    const server = app.listen(PORT, '0.0.0.0', () => {
-        console.log(`Server running at http://0.0.0.0:${PORT}`);
-    });
-
-    return server;
 }
 
 module.exports = { setupServer, PORT };
