@@ -83,21 +83,30 @@ function setupServer(mainWindow) {
                     progress, 
                     deviceName: req.headers['device-name'] || 'Unknown' 
                 });
+                // Also send a specific event for the last active device
+                mainWindow.webContents.send('device-activity', { 
+                    name: req.headers['device-name'] || 'Unknown' 
+                });
             }
         });
         next();
     }, upload.array('file'), (req, res) => {
         if (!req.files || req.files.length === 0) return res.status(400).send('No files uploaded.');
 
+        const deviceName = (req.headers['device-name'] || req.body['device-name'] || 'UnknownDevice').trim();
+
         req.files.forEach(file => {
             const info = {
                 filename: file.originalname,
-                device: (req.headers['device-name'] || req.body['device-name'] || 'UnknownDevice').trim(),
+                device: deviceName,
                 path: file.path,
                 category: path.basename(path.dirname(file.path)),
                 time: new Date().toLocaleTimeString()
             };
-            if (mainWindow) mainWindow.webContents.send('file-received', info);
+            if (mainWindow) {
+                mainWindow.webContents.send('file-received', info);
+                mainWindow.webContents.send('device-activity', { name: deviceName });
+            }
         });
 
         res.status(200).json({ message: `${req.files.length} files uploaded` });
@@ -185,12 +194,19 @@ function setupServer(mainWindow) {
                     const resetBtn = document.getElementById('reset-btn');
 
                     function checkRegistration() {
-                        const name = localStorage.getItem('drop-device-name');
-                        if (name) {
+                        const savedName = localStorage.getItem('drop-device-name');
+                        const urlParams = new URLSearchParams(window.location.search);
+                        const syncHint = urlParams.get('sync');
+
+                        if (savedName) {
                             regView.style.display = 'none';
                             upView.style.display = 'block';
-                            dnDisplay.innerText = name;
+                            dnDisplay.innerText = savedName;
                             fetchPcFiles();
+                        } else if (syncHint) {
+                            // Perfect! Zero-click sync
+                            dnInput.value = syncHint;
+                            registerDevice();
                         } else {
                             regView.style.display = 'block';
                             upView.style.display = 'none';

@@ -95,19 +95,24 @@
         let localUrl = '';
         let publicUrl = '';
         let currentMode = 'local';
+        let lastDevice = '';
         let count = 0;
 
         function updateConnectionUI() {
-            const url = currentMode === 'local' ? localUrl : publicUrl;
-            if (!url) return;
+            const baseUrl = currentMode === 'local' ? localUrl : publicUrl;
+            if (!baseUrl) return;
 
-            webUrl.innerText = url;
-            ipDisplay.innerText = url + (url.endsWith('/') ? 'upload' : '/upload');
+            // Append sync hint for seamless cross-origin transition
+            const url = lastDevice ? `${baseUrl}?sync=${encodeURIComponent(lastDevice)}` : baseUrl;
+
+            // Update display
+            webUrl.innerText = baseUrl;
+            ipDisplay.innerText = (currentMode === 'local' ? 'Local: ' : 'Public: ') + baseUrl;
 
             // Generate QR Code
             QRCode.toCanvas(qrCanvas, url, {
-                width: 200,
-                margin: 2,
+                width: 240,
+                margin: 1,
                 color: {
                     dark: '#000000',
                     light: '#ffffff'
