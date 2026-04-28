@@ -30,7 +30,7 @@ body {
 
 header {
     -webkit-app-region: drag;
-    padding: 2rem;
+    padding: 1.2rem 1.5rem;
     background: var(--bg);
     border-bottom: 1px solid var(--border);
     display: flex;
@@ -90,17 +90,17 @@ header p {
 
 main {
     flex: 1;
-    padding: 2rem;
+    padding: 1.5rem;
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 1.2rem;
     overflow-y: auto;
 }
 
 .status-card {
     background: var(--card-bg);
     border: 1px solid var(--border);
-    padding: 2rem;
+    padding: 1.5rem;
     border-radius: 8px;
     display: flex;
     flex-direction: column;
@@ -112,7 +112,7 @@ main {
     background: #111111;
     padding: 4px;
     border-radius: 6px;
-    margin-bottom: 2rem;
+    margin-bottom: 1.2rem;
     width: 100%;
     max-width: 320px;
 }
