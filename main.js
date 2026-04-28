@@ -2,8 +2,32 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { setupServer } = require('./server');
 const ip = require('ip');
+const cloudflared = require('cloudflared');
 
 let mainWindow;
+let tunnel;
+
+let tunnelUrl = null;
+
+async function startTunnel(port) {
+    try {
+        tunnel = cloudflared.tunnel({ '--url': `http://localhost:${port}` });
+        
+        tunnel.on('url', (url) => {
+            tunnelUrl = url;
+            console.log('Tunnel started:', url);
+            if (mainWindow) {
+                mainWindow.webContents.send('public-url', url);
+            }
+        });
+
+        tunnel.on('error', (err) => {
+            console.error('Tunnel error:', err);
+        });
+    } catch (err) {
+        console.error('Failed to start tunnel:', err);
+    }
+}
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -26,10 +50,18 @@ function createWindow() {
     // Setup the file server
     setupServer(mainWindow);
 
-    // Send local IP to UI
+    // Start Cloudflare Tunnel
+    startTunnel(5000);
+
+    // Send local IP and tunnel URL to UI
     mainWindow.webContents.on('did-finish-load', () => {
         const localIP = ip.address();
         mainWindow.webContents.send('server-info', { ip: localIP, port: 5000 });
+        
+        // If tunnel is already active, send the URL now
+        if (tunnelUrl) {
+            mainWindow.webContents.send('public-url', tunnelUrl);
+        }
     });
 }
 

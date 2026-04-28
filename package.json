@@ -30,6 +30,7 @@
     "multer": "^2.1.1"
   },
   "dependencies": {
+    "cloudflared": "^0.7.1",
     "qrcode": "^1.5.4"
   }
 }

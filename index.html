@@ -24,6 +24,10 @@
         </header>
 
         <section class="status-card">
+            <div class="mode-switch">
+                <button id="mode-local" class="mode-btn active" title="Share via Local Wi-Fi">🏠 Local Mode</button>
+                <button id="mode-remote" class="mode-btn" disabled title="Remote Access Disabled (Connecting...)">🌐 Remote Mode</button>
+            </div>
             <div class="card-top">
                 <div class="ip-info">
                     <span class="label">Server Address</span>
@@ -85,25 +89,20 @@
         const progressDevice = document.getElementById('progress-device');
         const progressPercent = document.getElementById('progress-percent');
         const pcProgressBar = document.getElementById('pc-progress-bar');
+        const modeLocalBtn = document.getElementById('mode-local');
+        const modeRemoteBtn = document.getElementById('mode-remote');
         
+        let localUrl = '';
+        let publicUrl = '';
+        let currentMode = 'local';
         let count = 0;
 
-        openFolderBtn.addEventListener('click', () => {
-            ipcRenderer.send('open-folder');
-        });
+        function updateConnectionUI() {
+            const url = currentMode === 'local' ? localUrl : publicUrl;
+            if (!url) return;
 
-        sendBtn.addEventListener('click', () => {
-            ipcRenderer.send('select-files-to-phone');
-        });
-
-        ipcRenderer.on('files-sent-to-phone', () => {
-            alert('File(s) are now ready for your Phone to download!');
-        });
-
-        ipcRenderer.on('server-info', (event, info) => {
-            const url = `http://${info.ip}:${info.port}/`;
-            ipDisplay.innerText = `${url}upload`;
             webUrl.innerText = url;
+            ipDisplay.innerText = url + (url.endsWith('/') ? 'upload' : '/upload');
 
             // Generate QR Code
             QRCode.toCanvas(qrCanvas, url, {
@@ -116,6 +115,68 @@
             }, (error) => {
                 if (error) console.error('QR Code error:', error);
             });
+
+            // Update UI State
+            if (currentMode === 'local') {
+                modeLocalBtn.classList.add('active');
+                modeRemoteBtn.classList.remove('active');
+            } else {
+                modeLocalBtn.classList.remove('active');
+                modeRemoteBtn.classList.add('active');
+            }
+        }
+
+        openFolderBtn.addEventListener('click', () => {
+            ipcRenderer.send('open-folder');
+        });
+
+        modeLocalBtn.addEventListener('click', () => {
+            currentMode = 'local';
+            updateConnectionUI();
+        });
+
+        modeRemoteBtn.addEventListener('click', () => {
+            if (publicUrl) {
+                currentMode = 'remote';
+                updateConnectionUI();
+            }
+        });
+
+        sendBtn.addEventListener('click', () => {
+            ipcRenderer.send('select-files-to-phone');
+        });
+
+        ipcRenderer.on('files-sent-to-phone', () => {
+            alert('File(s) are now ready for your Phone to download!');
+        });
+
+        ipcRenderer.on('server-info', (event, info) => {
+            localUrl = `http://${info.ip}:${info.port}/`;
+            if (currentMode === 'local') {
+                updateConnectionUI();
+            }
+        });
+
+        ipcRenderer.on('public-url', (event, url) => {
+            publicUrl = url;
+            modeRemoteBtn.disabled = false;
+            modeRemoteBtn.title = "Share across networks";
+            
+            if (currentMode === 'remote') {
+                updateConnectionUI();
+            }
+
+            // Status indicator
+            const addressInfo = document.querySelector('.ip-info');
+            if (addressInfo && !document.getElementById('public-status')) {
+                const statusMsg = document.createElement('p');
+                statusMsg.id = 'public-status';
+                statusMsg.style.color = '#a6e3a1';
+                statusMsg.style.fontSize = '0.75rem';
+                statusMsg.style.marginTop = '0.4rem';
+                statusMsg.innerText = '● Remote Tunnel Ready';
+                addressInfo.appendChild(statusMsg);
+            }
         });
 
         ipcRenderer.on('upload-progress', (event, data) => {

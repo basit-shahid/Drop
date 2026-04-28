@@ -94,6 +94,43 @@ header p {
     margin-top: 0.5rem;
 }
 
+.mode-switch {
+    display: flex;
+    background: #313244;
+    padding: 0.3rem;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+    gap: 0.3rem;
+}
+
+.mode-btn {
+    flex: 1;
+    background: transparent;
+    border: none;
+    padding: 0.6rem;
+    border-radius: 9px;
+    color: #a6adc8;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.mode-btn.active {
+    background: #45475a;
+    color: var(--accent);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+}
+
+.mode-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .status-card {
     background: var(--card-bg);
     backdrop-filter: blur(10px);
