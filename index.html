@@ -3,125 +3,255 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Drop - File Receiver</title>
+    <title>Drop - Neon Mobile</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 </head>
 <body>
     <div class="drag-region"></div>
     <div class="container">
         <header>
-            <div class="header-main">
-                <div>
-                    <h1>Drop</h1>
-                    <p>Sync files across devices instantly</p>
-                </div>
-                <div class="header-actions">
-                    <button id="send-btn" class="action-btn secondary" title="Make files available for Phone to download">Send to Phone</button>
-                    <button id="open-folder-btn" class="action-btn">Files Folder</button>
-                </div>
-            </div>
+            <h1>DROP</h1>
+            <p>Instant File Sync</p>
         </header>
 
-        <section class="status-card">
-            <div class="mode-switch">
-                <button id="mode-local" class="mode-btn active" title="Share via Local Wi-Fi">🏠 Local Mode</button>
-                <button id="mode-remote" class="mode-btn" disabled title="Remote Access Disabled (Connecting...)">🌐 Remote Mode</button>
-            </div>
-            <div class="card-top">
-                <div class="ip-info">
-                    <span class="label">Server Address</span>
-                    <div class="ip-address" id="ip-display">Connecting...</div>
-                    <p class="hint">Scan QR to connect instantly</p>
-                </div>
-                <div class="qr-container">
-                    <canvas id="qr-canvas"></canvas>
-                </div>
-                <div class="status-indicator">
-                    <div class="dot active"></div>
-                    <span>Server Running</span>
-                </div>
-            </div>
-            <div id="global-progress" class="global-progress">
-                <div class="progress-header">
-                    <span id="progress-label">Receiving from <strong id="progress-device">...</strong></span>
-                    <span id="progress-percent">0%</span>
-                </div>
-                <div class="pc-progress-container">
-                    <div id="pc-progress-bar" class="pc-progress-bar"></div>
-                </div>
-            </div>
-        </section>
+        <div class="header-actions">
+            <button id="send-btn" class="action-btn" title="Make files available for Phone to download">
+                <span>📤</span> Send
+            </button>
+            <button id="open-folder-btn" class="action-btn secondary">
+                <span>📂</span> Files
+            </button>
+        </div>
 
-        <section class="log-section">
-            <div class="section-header">
-                <h2>Recent Transfers</h2>
-                <span id="transfer-count">0 files received</span>
-            </div>
-            <div class="file-list" id="file-list">
-                <div class="empty-state">
-                    <p>No files received yet. Waiting for connections...</p>
+        <main>
+            <section class="status-card">
+                <div class="mode-switch">
+                    <button id="mode-local" class="mode-btn active">🏠 LOCAL</button>
+                    <button id="mode-remote" class="mode-btn" disabled>🌐 REMOTE</button>
+                    <button id="mode-client" class="mode-btn">📤 CLIENT</button>
                 </div>
-            </div>
-        </section>
+                
+                <div class="card-top" id="server-view">
+                    <div class="qr-container">
+                        <canvas id="qr-canvas"></canvas>
+                    </div>
+                    
+                    <div class="ip-info">
+                        <span class="label">SCAN TO CONNECT</span>
+                        <div class="ip-address" id="ip-display">CONNECTING...</div>
+                        <p class="hint">Works instantly on any device</p>
+                    </div>
 
-        <section class="instructions">
-            <h3>How to use:</h3>
-            <ol>
-                <li>Make sure Android and PC are on the same Wi-Fi.</li>
-                <li>On Android, scan the QR code or go to: <code id="web-url">...</code></li>
-                <li>Enter a unique device name, select a file, and tap Upload.</li>
-            </ol>
-        </section>
+                    <div class="status-indicator">
+                        <div class="dot active"></div>
+                        <span>SERVER ACTIVE</span>
+                    </div>
+                </div>
+
+                <div class="card-top" id="client-view" style="display: none;">
+                    <div id="client-setup-view" class="client-setup">
+                        <div class="ip-info">
+                            <span class="label">CONNECT TO REMOTE SERVER</span>
+                            <input type="text" id="server-url-input" class="neon-input" placeholder="e.g. 192.168.1.5:5000">
+                        </div>
+                        <div class="setup-actions">
+                            <button id="connect-btn" class="connect-btn">CONNECT NOW</button>
+                            <button id="start-scan-btn" class="scan-qr-btn">📸 SCAN QR CODE</button>
+                            <p class="hint">Enter address or scan from another screen</p>
+                        </div>
+                    </div>
+
+                    <div id="client-upload-view" style="display: none; width: 100%;">
+                        <div class="upload-zone" id="drop-zone">
+                            <div class="upload-icon-circle">
+                                <span class="upload-icon">🚀</span>
+                            </div>
+                            <span class="label">CONNECTED TO REMOTE</span>
+                            <span id="file-label" class="file-label">SELECT OR DROP FILES</span>
+                            <input type="file" id="file-input" multiple>
+                        </div>
+                        
+                        <div class="client-actions">
+                            <button id="upload-btn" class="action-btn">UPLOAD FILES</button>
+                        </div>
+
+                        <div id="client-status" class="client-status">READY FOR SYNC</div>
+                        
+                        <div id="client-downloads-section" class="downloads-section" style="margin-top: 2rem; display: none;">
+                            <h2 style="font-size: 0.9rem; color: var(--neon-magenta);">FILES FROM SERVER</h2>
+                            <div id="remote-file-list" class="file-list"></div>
+                        </div>
+
+                        <button id="disconnect-btn" class="disconnect-btn">DISCONNECT</button>
+                    </div>
+                </div>
+
+                <div id="scanner-overlay" class="scanner-overlay">
+                    <video id="scanner-video" playsinline></video>
+                    <div class="scanner-window">
+                        <div class="scanner-line"></div>
+                    </div>
+                    <div class="scanner-controls">
+                        <button id="close-scanner-btn" class="disconnect-btn">CANCEL SCAN</button>
+                    </div>
+                    <canvas id="scanner-canvas" style="display:none;"></canvas>
+                </div>
+
+                <div id="global-progress" class="global-progress">
+                    <div class="progress-header">
+                        <span id="progress-label">INCOMING: <strong id="progress-device">...</strong></span>
+                        <span id="progress-percent">0%</span>
+                    </div>
+                    <div class="pc-progress-container">
+                        <div id="pc-progress-bar" class="pc-progress-bar"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="log-section">
+                <div class="section-header">
+                    <h2>TRANSFERS</h2>
+                    <span id="transfer-count">READY</span>
+                </div>
+                <div class="file-list" id="file-list">
+                    <div class="empty-state">
+                        <p>Waiting for connections...</p>
+                    </div>
+                </div>
+            </section>
+
+        </main>
     </div>
 
     <script>
         const { ipcRenderer } = require('electron');
         const QRCode = require('qrcode');
-        const fileList = document.getElementById('file-list');
-        const ipDisplay = document.getElementById('ip-display');
-        const webUrl = document.getElementById('web-url');
-        const transferCount = document.getElementById('transfer-count');
-        const openFolderBtn = document.getElementById('open-folder-btn');
-        const sendBtn = document.getElementById('send-btn');
-        const qrCanvas = document.getElementById('qr-canvas');
-        const globalProgress = document.getElementById('global-progress');
-        const progressDevice = document.getElementById('progress-device');
-        const progressPercent = document.getElementById('progress-percent');
-        const pcProgressBar = document.getElementById('pc-progress-bar');
-        const modeLocalBtn = document.getElementById('mode-local');
-        const modeRemoteBtn = document.getElementById('mode-remote');
         
+        // State variables at the top
         let localUrl = '';
         let publicUrl = '';
         let currentMode = 'local';
         let lastDevice = '';
         let count = 0;
+        let targetServerUrl = '';
+        let scanning = false;
+        let scanStream = null;
+        let remotePollInterval = null;
+        let localIPs = [];
+        let currentIpIndex = 0;
+
+        const fileList = document.getElementById('file-list');
+        const ipDisplay = document.getElementById('ip-display');
+        const transferCount = document.getElementById('transfer-count');
+        const openFolderBtn = document.getElementById('open-folder-btn');
+        const sendBtn = document.getElementById('send-btn');
+        const globalProgress = document.getElementById('global-progress');
+        const progressDevice = document.getElementById('progress-device');
+        const progressPercent = document.getElementById('progress-percent');
+        const pcProgressBar = document.getElementById('pc-progress-bar');
+        
+        const modeLocalBtn = document.getElementById('mode-local');
+        const modeRemoteBtn = document.getElementById('mode-remote');
+        const modeClientBtn = document.getElementById('mode-client');
+        const serverView = document.getElementById('server-view');
+        const clientView = document.getElementById('client-view');
+        const clientSetupView = document.getElementById('client-setup-view');
+        const clientUploadView = document.getElementById('client-upload-view');
+        const clientFileInput = document.getElementById('file-input');
+        const clientFileLabel = document.getElementById('file-label');
+        const clientUploadBtn = document.getElementById('upload-btn');
+        const clientStatus = document.getElementById('client-status');
+        const serverUrlInput = document.getElementById('server-url-input');
+        const connectBtn = document.getElementById('connect-btn');
+        const disconnectBtn = document.getElementById('disconnect-btn');
+        const startScanBtn = document.getElementById('start-scan-btn');
+        const scannerOverlay = document.getElementById('scanner-overlay');
+        const scannerVideo = document.getElementById('scanner-video');
+        const scannerCanvas = document.getElementById('scanner-canvas');
+        const closeScannerBtn = document.getElementById('close-scanner-btn');
+        const clientDownloadsSection = document.getElementById('client-downloads-section');
+        const remoteFileList = document.getElementById('remote-file-list');
+        
+        async function loadRemoteFiles() {
+            if (!targetServerUrl) return;
+            try {
+                const res = await fetch(targetServerUrl + 'pc-files');
+                const files = await res.json();
+                clientDownloadsSection.style.display = files.length > 0 ? 'block' : 'none';
+                if (files.length === 0) return;
+                
+                remoteFileList.innerHTML = files.map(f => `
+                    <div class="file-item" onclick="require('electron').shell.openExternal('${targetServerUrl}download/${encodeURIComponent(f.name)}')">
+                        <div class="file-info">
+                            <div class="file-name">${f.name}</div>
+                            <div class="file-size">${f.size}</div>
+                        </div>
+                        <div class="dl-icon">📥</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Remote files load failed', e);
+            }
+        }
 
         function updateConnectionUI() {
-            const baseUrl = currentMode === 'local' ? localUrl : publicUrl;
-            if (!baseUrl) return;
-
-            // Append sync hint for seamless cross-origin transition
-            const url = lastDevice ? `${baseUrl}?sync=${encodeURIComponent(lastDevice)}` : baseUrl;
-
-            // Update display
-            webUrl.innerText = baseUrl;
-            ipDisplay.innerText = (currentMode === 'local' ? 'Local: ' : 'Public: ') + baseUrl;
-
-            // Generate QR Code
-            QRCode.toCanvas(qrCanvas, url, {
-                width: 240,
-                margin: 1,
-                color: {
-                    dark: '#000000',
-                    light: '#ffffff'
+            if (currentMode === 'client') {
+                serverView.style.display = 'none';
+                clientView.style.display = 'flex';
+                modeLocalBtn.classList.remove('active');
+                modeRemoteBtn.classList.remove('active');
+                modeClientBtn.classList.add('active');
+                
+                if (!targetServerUrl) {
+                    clientSetupView.style.display = 'block';
+                    clientUploadView.style.display = 'none';
+                } else {
+                    clientSetupView.style.display = 'none';
+                    clientUploadView.style.display = 'block';
                 }
-            }, (error) => {
-                if (error) console.error('QR Code error:', error);
-            });
+                return;
+            }
 
-            // Update UI State
+            serverView.style.display = 'flex';
+            clientView.style.display = 'none';
+            modeClientBtn.classList.remove('active');
+
+            const baseUrl = currentMode === 'local' ? localUrl : publicUrl;
+            if (!baseUrl) {
+                ipDisplay.innerText = 'CONNECTING...';
+                return;
+            }
+
+            const url = lastDevice ? `${baseUrl}?sync=${encodeURIComponent(lastDevice)}` : baseUrl;
+            const displayUrl = baseUrl.split('://')[1].replace(/\/$/, '');
+            ipDisplay.innerText = displayUrl;
+
+            // Multi-IP Hint
+            const hintEl = document.querySelector('.ip-info .hint');
+            if (localIPs.length > 1 && currentMode === 'local') {
+                hintEl.innerText = 'Click IP to switch network';
+                hintEl.style.color = 'var(--neon-magenta)';
+                hintEl.style.fontWeight = 'bold';
+            } else {
+                hintEl.innerText = 'Scan to connect instantly';
+                hintEl.style.color = 'var(--text-dim)';
+                hintEl.style.fontWeight = 'normal';
+            }
+
+            QRCode.toDataURL(url, {
+                width: 250,
+                margin: 2,
+                color: {
+                    dark: '#00f7ff',
+                    light: '#000000'
+                }
+            }).then(imgData => {
+                const container = document.querySelector('.qr-container');
+                container.innerHTML = `<img src="${imgData}" style="width: 200px; height: 200px; display: block; border-radius: 12px;">`;
+            }).catch(err => console.error('QR Generate Error', err));
+
             if (currentMode === 'local') {
                 modeLocalBtn.classList.add('active');
                 modeRemoteBtn.classList.remove('active');
@@ -131,75 +261,157 @@
             }
         }
 
-        openFolderBtn.addEventListener('click', () => {
-            ipcRenderer.send('open-folder');
-        });
-
-        modeLocalBtn.addEventListener('click', () => {
-            currentMode = 'local';
-            updateConnectionUI();
-        });
-
-        modeRemoteBtn.addEventListener('click', () => {
-            if (publicUrl) {
-                currentMode = 'remote';
-                updateConnectionUI();
+        // Scanner Logic
+        async function startScanner() {
+            try {
+                scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                scannerVideo.srcObject = scanStream;
+                scannerVideo.setAttribute('playsinline', true);
+                scannerVideo.play();
+                scannerOverlay.style.display = 'flex';
+                scanning = true;
+                requestAnimationFrame(tick);
+            } catch (err) {
+                alert('Camera access denied or not available.');
             }
+        }
+
+        function stopScanner() {
+            scanning = false;
+            if (scanStream) {
+                scanStream.getTracks().forEach(track => track.stop());
+                scanStream = null;
+            }
+            scannerOverlay.style.display = 'none';
+            scannerVideo.srcObject = null;
+        }
+
+        function tick() {
+            if (scannerVideo.readyState === scannerVideo.HAVE_ENOUGH_DATA && scanning) {
+                const canvas = scannerCanvas;
+                const context = canvas.getContext('2d');
+                canvas.height = scannerVideo.videoHeight;
+                canvas.width = scannerVideo.videoWidth;
+                context.drawImage(scannerVideo, 0, 0, canvas.width, canvas.height);
+                
+                const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: 'dontInvert',
+                });
+
+                if (code) {
+                    let url = code.data;
+                    if (url.startsWith('http')) {
+                        stopScanner();
+                        handleConnect(url);
+                        return;
+                    }
+                }
+            }
+            if (scanning) requestAnimationFrame(tick);
+        }
+
+        function handleConnect(url) {
+            if (!url) return;
+            if (!url.startsWith('http')) url = 'http://' + url;
+            if (!url.endsWith('/')) url += '/';
+            targetServerUrl = url;
+            clientSetupView.style.display = 'none';
+            clientUploadView.style.display = 'block';
+            clientStatus.innerText = 'SYNCED TO REMOTE';
+            
+            // Start polling for remote files
+            loadRemoteFiles();
+            if (remotePollInterval) clearInterval(remotePollInterval);
+            remotePollInterval = setInterval(loadRemoteFiles, 5000);
+        }
+
+        modeLocalBtn.addEventListener('click', () => { currentMode = 'local'; updateConnectionUI(); });
+        modeRemoteBtn.addEventListener('click', () => { if (publicUrl) { currentMode = 'remote'; updateConnectionUI(); } });
+        modeClientBtn.addEventListener('click', () => { currentMode = 'client'; updateConnectionUI(); });
+        
+        startScanBtn.addEventListener('click', startScanner);
+        closeScannerBtn.addEventListener('click', stopScanner);
+        connectBtn.addEventListener('click', () => handleConnect(serverUrlInput.value.trim()));
+        disconnectBtn.addEventListener('click', () => {
+            targetServerUrl = '';
+            if (remotePollInterval) clearInterval(remotePollInterval);
+            remotePollInterval = null;
+            clientSetupView.style.display = 'block';
+            clientUploadView.style.display = 'none';
+            clientDownloadsSection.style.display = 'none';
+            clientStatus.innerText = 'READY FOR SYNC';
         });
 
-        sendBtn.addEventListener('click', () => {
-            ipcRenderer.send('select-files-to-phone');
+        clientFileInput.addEventListener('change', () => {
+            const count = clientFileInput.files.length;
+            clientFileLabel.innerText = count > 0 ? `${count} FILE${count > 1 ? 'S' : ''} READY` : 'SELECT OR DROP FILES';
+            clientStatus.innerText = 'READY FOR UPLOAD';
         });
 
-        ipcRenderer.on('files-sent-to-phone', () => {
-            alert('File(s) are now ready for your Phone to download!');
-        });
+        async function uploadFromPC() {
+            if (clientFileInput.files.length === 0 || !targetServerUrl) return;
+            const formData = new FormData();
+            for (let f of clientFileInput.files) formData.append('file', f);
+            formData.append('device-name', 'PC-Local');
+
+            clientUploadBtn.disabled = true;
+            clientStatus.innerText = 'UPLOADING...';
+            
+            try {
+                const response = await fetch(targetServerUrl + 'upload', {
+                    method: 'POST',
+                    headers: { 'device-name': 'PC-Local' },
+                    body: formData
+                });
+                if (response.ok) {
+                    clientStatus.innerText = 'SYNC COMPLETED!';
+                    setTimeout(() => {
+                        clientFileInput.value = '';
+                        clientFileLabel.innerText = 'SELECT OR DROP FILES';
+                        clientStatus.innerText = 'SYNCED TO REMOTE';
+                        clientUploadBtn.disabled = false;
+                    }, 2000);
+                } else {
+                    clientStatus.innerText = 'UPLOAD FAILED';
+                    clientUploadBtn.disabled = false;
+                }
+            } catch (err) {
+                clientStatus.innerText = 'SERVER OFFLINE';
+                clientUploadBtn.disabled = false;
+            }
+        }
+
+        clientUploadBtn.addEventListener('click', uploadFromPC);
+        openFolderBtn.addEventListener('click', () => ipcRenderer.send('open-folder'));
+        sendBtn.addEventListener('click', () => ipcRenderer.send('select-files-to-phone'));
+
+        ipcRenderer.on('files-sent-to-phone', () => alert('Files ready for Phone download!'));
 
         ipcRenderer.on('server-info', (event, info) => {
-            localUrl = `http://${info.ip}:${info.port}/`;
-            if (currentMode === 'local') {
-                updateConnectionUI();
-            }
+            localIPs = info.ips || [info.ip];
+            // Smart selection: find first common home network range
+            let bestIndex = localIPs.findIndex(ip => ip.startsWith('192.168.1.') || ip.startsWith('192.168.0.'));
+            if (bestIndex === -1) bestIndex = 0;
+            currentIpIndex = bestIndex;
+            
+            localUrl = `http://${localIPs[currentIpIndex]}:${info.port}/`;
+            if (currentMode === 'local') updateConnectionUI();
+        });
 
-            // Show initialization status for remote
-            const addressInfo = document.querySelector('.ip-info');
-            if (addressInfo && !document.getElementById('public-status')) {
-                const initMsg = document.createElement('p');
-                initMsg.id = 'public-status-init';
-                initMsg.style.color = '#f9e2af';
-                initMsg.style.fontSize = '0.75rem';
-                initMsg.style.marginTop = '0.4rem';
-                initMsg.innerText = '○ Initializing Remote Tunnel...';
-                addressInfo.appendChild(initMsg);
-                
-                modeRemoteBtn.innerText = "🌐 Remote (Connecting...)";
+        ipDisplay.addEventListener('click', () => {
+            if (localIPs.length > 1) {
+                currentIpIndex = (currentIpIndex + 1) % localIPs.length;
+                localUrl = `http://${localIPs[currentIpIndex]}:5000/`;
+                updateConnectionUI();
             }
         });
 
         ipcRenderer.on('public-url', (event, url) => {
             publicUrl = url;
             modeRemoteBtn.disabled = false;
-            modeRemoteBtn.innerText = "🌐 Remote Mode";
-            modeRemoteBtn.title = "Share across networks";
-            
-            if (currentMode === 'remote') {
-                updateConnectionUI();
-            }
-
-            // Remove init status and add ready status
-            const initMsg = document.getElementById('public-status-init');
-            if (initMsg) initMsg.remove();
-
-            const addressInfo = document.querySelector('.ip-info');
-            if (addressInfo && !document.getElementById('public-status')) {
-                const statusMsg = document.createElement('p');
-                statusMsg.id = 'public-status';
-                statusMsg.style.color = '#a6e3a1';
-                statusMsg.style.fontSize = '0.75rem';
-                statusMsg.style.marginTop = '0.4rem';
-                statusMsg.innerText = '● Remote Tunnel Ready';
-                addressInfo.appendChild(statusMsg);
-            }
+            modeRemoteBtn.innerText = "🌐 REMOTE";
+            if (currentMode === 'remote') updateConnectionUI();
         });
 
         ipcRenderer.on('upload-progress', (event, data) => {
@@ -207,32 +419,29 @@
             progressDevice.innerText = data.deviceName;
             progressPercent.innerText = data.progress + '%';
             pcProgressBar.style.width = data.progress + '%';
-            
             if (data.progress === 100) {
-                setTimeout(() => {
-                    globalProgress.classList.remove('active');
-                }, 2000);
+                setTimeout(() => globalProgress.classList.remove('active'), 2000);
             }
         });
 
         ipcRenderer.on('file-received', (event, file) => {
             if (count === 0) fileList.innerHTML = '';
             count++;
-            transferCount.innerText = `${count} file${count > 1 ? 's' : ''} received`;
-
+            transferCount.innerText = `${count} FILE${count > 1 ? 'S' : ''}`;
             const item = document.createElement('div');
             item.className = 'file-item';
+            item.title = 'Click to open folder';
             item.innerHTML = `
                 <div class="file-icon">📄</div>
                 <div class="file-details">
                     <div class="filename">${file.filename}</div>
-                    <div class="device-info">From: ${file.device} <span class="badge">${file.category}</span></div>
+                    <div class="device-info">FROM: ${file.device} <span class="badge">${file.category}</span></div>
                 </div>
-                <div class="file-meta">
-                    <div class="time">${file.time}</div>
-                </div>
+                <div class="time">${file.time}</div>
             `;
+            item.addEventListener('click', () => ipcRenderer.send('show-file', file.path));
             fileList.prepend(item);
+            item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         });
     </script>
 </body>

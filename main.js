@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const { setupServer } = require('./server');
 const ip = require('ip');
@@ -52,19 +52,20 @@ async function startTunnel(port) {
 
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 800,
-        height: 600,
+        width: 400,
+        height: 680,
         resizable: false,
         maximizable: false,
-        backgroundColor: '#1e1e2e',
+        icon: path.join(__dirname, 'logo.png'),
+        backgroundColor: '#050505',
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false,
         },
         titleBarStyle: 'hidden',
         titleBarOverlay: {
-          color: '#1e1e2e',
-          symbolColor: '#cdd6f4'
+          color: '#050505',
+          symbolColor: '#ffffff'
         }
     });
 
@@ -76,12 +77,31 @@ function createWindow() {
     // Start Cloudflare Tunnel
     startTunnel(5000);
 
-    // Send local IP and tunnel URL to UI
+    // Send all local IPs and tunnel URL to UI
     mainWindow.webContents.on('did-finish-load', () => {
-        const localIP = ip.address();
-        mainWindow.webContents.send('server-info', { ip: localIP, port: 5000 });
+        const interfaces = require('os').networkInterfaces();
+        const localIPs = [];
         
-        // If tunnel is already active, send the URL now
+        // Prioritize Wi-Fi and Wireless interfaces
+        const sortedNames = Object.keys(interfaces).sort((a, b) => {
+            const aW = a.toLowerCase().includes('wi-fi') || a.toLowerCase().includes('wireless');
+            const bW = b.toLowerCase().includes('wi-fi') || b.toLowerCase().includes('wireless');
+            if (aW && !bW) return -1;
+            if (!aW && bW) return 1;
+            return 0;
+        });
+
+        for (const name of sortedNames) {
+            for (const iface of interfaces[name]) {
+                if (iface.family === 'IPv4' && !iface.internal) {
+                    localIPs.push(iface.address);
+                }
+            }
+        }
+
+        console.log(`[Server] Detected Local IPs (Prioritized): ${localIPs.join(', ')}`);
+        mainWindow.webContents.send('server-info', { ips: localIPs, port: 5000 });
+        
         if (tunnelUrl) {
             mainWindow.webContents.send('public-url', tunnelUrl);
         }
@@ -90,6 +110,12 @@ function createWindow() {
 
 app.whenReady().then(() => {
     createWindow();
+
+    ipcMain.on('show-file', (event, filePath) => {
+        if (filePath && fs.existsSync(filePath)) {
+            shell.showItemInFolder(filePath);
+        }
+    });
 
     app.on('activate', function () {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();

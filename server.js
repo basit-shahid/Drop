@@ -15,34 +15,25 @@ app.use(express.json());
 // Robust path handling
 const DOWNLOAD_BASE = path.join(os.homedir(), 'Documents', 'AndroidFiles');
 const FROM_PC_DIR = path.join(DOWNLOAD_BASE, 'FromPC');
-const DEVICES_FILE = path.join(DOWNLOAD_BASE, 'devices.json');
-
-// Ensure directories exist
+// Ensure directories exist and clear FromPC for transparency
 [DOWNLOAD_BASE, FROM_PC_DIR].forEach(dir => {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    } else if (dir === FROM_PC_DIR) {
+        // Clear previous files in this session
+        try {
+            fs.readdirSync(dir).forEach(file => {
+                fs.unlinkSync(path.join(dir, file));
+            });
+            console.log('[Server] Shared files cleared for new session');
+        } catch (err) {
+            console.error('[Server] Failed to clear previous files:', err);
+        }
+    }
 });
-
-function getKnownDevices() {
-    if (!fs.existsSync(DEVICES_FILE)) return [];
-    try {
-        const data = fs.readFileSync(DEVICES_FILE, 'utf8');
-        return JSON.parse(data);
-    } catch (e) {
-        return [];
-    }
-}
-
-function saveDevice(name) {
-    const devices = getKnownDevices();
-    if (!devices.includes(name)) {
-        devices.push(name);
-        fs.writeFileSync(DEVICES_FILE, JSON.stringify(devices, null, 2));
-    }
-}
 
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
-        let deviceName = (req.headers['device-name'] || req.body['device-name'] || 'UnknownDevice').trim().replace(/[^a-z0-9_-]/gi, '_');
         const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
         
         let category = 'other';
@@ -56,9 +47,9 @@ const storage = multer.diskStorage({
             category = 'music';
         }
 
-        const deviceDir = path.join(DOWNLOAD_BASE, deviceName, category);
-        if (!fs.existsSync(deviceDir)) fs.mkdirSync(deviceDir, { recursive: true });
-        cb(null, deviceDir);
+        const targetDir = path.join(DOWNLOAD_BASE, category);
+        if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+        cb(null, targetDir);
     },
     filename: function (req, file, cb) {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -112,214 +103,258 @@ function setupServer(mainWindow) {
         res.status(200).json({ message: `${req.files.length} files uploaded` });
     });
 
-    app.get('/known-devices', (req, res) => {
-        res.json(getKnownDevices());
+    app.get('/manifest.json', (req, res) => {
+        res.json({
+            name: "Drop",
+            short_name: "Drop",
+            start_url: "/",
+            display: "standalone",
+            background_color: "#050505",
+            theme_color: "#00f7ff",
+            icons: [{
+                src: "/logo.png",
+                sizes: "512x512",
+                type: "image/png",
+                purpose: "any maskable"
+            }]
+        });
     });
 
-    app.get('/check-device/:name', (req, res) => {
-        const name = req.params.name.trim();
-        const safeName = name.toLowerCase().replace(/[^a-z0-9_-]/gi, '_');
-        const deviceDir = path.join(DOWNLOAD_BASE, safeName);
-        if (fs.existsSync(deviceDir)) {
-            res.json({ available: false });
-        } else {
-            saveDevice(name);
-            res.json({ available: true });
-        }
+    app.get('/sw.js', (req, res) => {
+        res.set('Content-Type', 'application/javascript');
+        res.send("self.addEventListener('fetch', function(event) {});"); // Basic SW to enable PWA
+    });
+
+    app.get('/logo.png', (req, res) => {
+        res.sendFile(path.join(__dirname, 'logo.png'));
     });
 
     app.get('/', (req, res) => {
+        console.log(`[Server] Web client access attempt from ${req.ip}`);
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
         res.send(`
             <!DOCTYPE html>
-            <html>
+            <html lang="en">
             <head>
-                <title>Drop</title>
-                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>Drop - Sync</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+                <meta name="theme-color" content="#00f7ff">
+                <link rel="manifest" href="/manifest.json">
+                <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+                <script>
+                    if ('serviceWorker' in navigator) {
+                        navigator.serviceWorker.register('/sw.js');
+                    }
+                </script>
                 <style>
-                    body { font-family: 'Inter', system-ui, sans-serif; background: #000000; color: #ffffff; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; margin: 0; }
-                    .card { background: #0a0a0a; padding: 2.5rem; border-radius: 12px; border: 1px solid #222222; width: 100%; max-width: 400px; text-align: center; }
-                    h1 { font-size: 1.8rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.05em; margin-bottom: 2rem; margin-top: 0; }
-                    p { font-size: 0.9rem; color: #888888; margin-bottom: 1.5rem; }
-                    input[type="text"], input[type="file"] { width: 100%; background: #111111; border: 1px solid #222222; color: #ffffff; padding: 0.8rem; border-radius: 4px; margin-bottom: 1rem; font-size: 0.9rem; outline: none; box-sizing: border-box; }
-                    button { width: 100%; background: #ffffff; color: #000000; border: none; padding: 1rem; border-radius: 4px; font-weight: 700; cursor: pointer; transition: opacity 0.2s; font-size: 0.9rem; text-transform: uppercase; }
-                    button:disabled { opacity: 0.5; }
-                    button.secondary { background: transparent; color: #ffffff; border: 1px solid #222222; margin-top: 0.5rem; }
-                    #error-msg { color: #ffffff; font-size: 0.8rem; margin-bottom: 1rem; border: 1px solid #ff0000; padding: 0.5rem; display: none; }
-                    .progress-container { width: 100%; height: 2px; background: #222222; margin: 1.5rem 0; display: none; overflow: hidden; }
-                    .progress-bar { height: 100%; background: #ffffff; width: 0%; transition: width 0.1s; }
-                    #status-text { font-size: 0.75rem; color: #888888; margin-top: 0.5rem; text-transform: uppercase; font-weight: 700; }
-                    .pc-file-item { background: #111; border: 1px solid #222; padding: 0.8rem; border-radius: 4px; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; }
+                    :root {
+                        --bg: #050505;
+                        --neon-cyan: #00f7ff;
+                        --neon-magenta: #ff00ff;
+                        --glass: rgba(255, 255, 255, 0.03);
+                        --border: rgba(0, 247, 255, 0.2);
+                    }
+                    body { 
+                        font-family: 'Outfit', sans-serif; 
+                        background: var(--bg); 
+                        color: #ffffff; 
+                        display: flex; 
+                        align-items: center; 
+                        justify-content: center; 
+                        min-height: 100vh; 
+                        padding: 20px; 
+                        margin: 0;
+                        background-image: radial-gradient(circle at 10% 20%, rgba(0, 247, 255, 0.05) 0%, transparent 20%);
+                    }
+                    .card { 
+                        background: rgba(15, 15, 15, 0.8); 
+                        padding: 2.5rem; 
+                        border-radius: 24px; 
+                        border: 1px solid var(--border); 
+                        width: 100%; 
+                        max-width: 400px; 
+                        text-align: center; 
+                        backdrop-filter: blur(20px);
+                        box-shadow: 0 0 20px rgba(0, 247, 255, 0.1);
+                    }
+                    h1 { font-size: 2.2rem; font-weight: 800; text-transform: uppercase; letter-spacing: -0.05em; color: var(--neon-cyan); margin-bottom: 2rem; text-shadow: 0 0 10px var(--neon-cyan); }
+                    p { font-size: 0.9rem; color: #a0a0a0; margin-bottom: 2rem; }
+                    
+                    .upload-area {
+                        position: relative;
+                        background: var(--glass);
+                        border: 2px dashed var(--border);
+                        border-radius: 16px;
+                        padding: 2rem;
+                        margin-bottom: 1.5rem;
+                        transition: all 0.3s;
+                    }
+                    .upload-area:hover {
+                        border-color: var(--neon-cyan);
+                        background: rgba(0, 247, 255, 0.05);
+                    }
+                    
+                    input[type="file"] { 
+                        position: absolute;
+                        inset: 0;
+                        opacity: 0;
+                        cursor: pointer;
+                        width: 100%;
+                    }
+
+                    .upload-icon { font-size: 2.5rem; display: block; margin-bottom: 1rem; }
+                    
+                    button { 
+                        width: 100%; 
+                        background: var(--neon-cyan); 
+                        color: #000; 
+                        border: none; 
+                        padding: 1rem; 
+                        border-radius: 12px; 
+                        font-weight: 700; 
+                        cursor: pointer; 
+                        transition: all 0.3s; 
+                        font-size: 1rem; 
+                        text-transform: uppercase;
+                        box-shadow: 0 0 15px var(--neon-cyan);
+                    }
+                    button:hover { transform: translateY(-2px); box-shadow: 0 0 25px var(--neon-cyan); }
+                    button:disabled { opacity: 0.5; transform: none; box-shadow: none; }
+                    
+                    .progress-container { width: 100%; height: 6px; background: rgba(255, 255, 255, 0.05); border-radius: 10px; margin: 1.5rem 0; display: none; overflow: hidden; }
+                    .progress-bar { height: 100%; background: linear-gradient(90deg, var(--neon-cyan), var(--neon-magenta)); width: 0%; transition: width 0.3s; box-shadow: 0 0 10px var(--neon-cyan); }
+                    #status-text { font-size: 0.8rem; color: var(--neon-cyan); margin-top: 1rem; font-weight: 600; text-transform: uppercase; }
+                    
+                    .downloads-section { margin-top: 3rem; text-align: left; border-top: 1px solid var(--border); padding-top: 2rem; }
+                    .downloads-section h2 { font-size: 1.2rem; color: var(--neon-magenta); text-transform: uppercase; margin-bottom: 1.5rem; text-shadow: 0 0 8px var(--neon-magenta); }
+                    .file-list { display: flex; flex-direction: column; gap: 10px; }
+                    .file-item { 
+                        background: var(--glass); 
+                        border: 1px solid rgba(255,255,255,0.05); 
+                        padding: 12px; 
+                        border-radius: 12px; 
+                        display: flex; 
+                        justify-content: space-between; 
+                        align-items: center;
+                        text-decoration: none;
+                        color: #fff;
+                        transition: all 0.3s;
+                    }
+                    .file-item:hover { border-color: var(--neon-magenta); background: rgba(255, 0, 255, 0.05); transform: translateX(5px); }
+                    .file-info { display: flex; flex-direction: column; }
+                    .file-name { font-size: 0.9rem; font-weight: 600; }
+                    .file-size { font-size: 0.7rem; color: #666; }
+                    .dl-icon { color: var(--neon-magenta); font-size: 1.2rem; }
                 </style>
             </head>
             <body>
                 <div class="card">
-                    <h1>Drop</h1>
-                    <div id="registration-view">
-                        <p>Register this device</p>
-                        <input type="text" id="dn-input" placeholder="e.g. My Phone" required>
-                        <div id="error-msg"></div>
-                        <button id="reg-btn" onclick="registerDevice()">Register</button>
-                        <div id="known-devices-view"></div>
-                    </div>
-                    <div id="upload-view" style="display: none;">
-                        <p>Linked as <strong id="device-display"></strong></p>
-                        <div id="upload-form">
-                            <input type="file" id="file-input" multiple required>
-                            <div class="progress-container" id="p-container">
-                                <div class="progress-bar" id="p-bar"></div>
-                            </div>
-                            <div id="status-text"></div>
-                            <button onclick="uploadFile()" id="upload-btn">Upload Files</button>
+                    <h1>DROP</h1>
+                    <p>Instant file sync with PC</p>
+                    
+                    <div id="upload-view">
+                        <div class="upload-area" id="drop-zone">
+                            <span class="upload-icon">📤</span>
+                            <span id="file-label">Select or drop files</span>
+                            <input type="file" id="file-input" multiple onchange="updateLabel()">
                         </div>
-                        <button id="reset-btn" onclick="clearRegistration()" style="background: transparent; color: #888; font-size: 0.7rem; margin-top: 1rem; border: 1px solid #222; padding: 0.3rem 0.6rem; border-radius: 4px;">Reset Name</button>
-                        
-                        <div id="pc-files-view" style="margin-top: 2rem; border-top: 1px solid #222; padding-top: 1rem;">
-                            <h3 style="font-size: 0.9rem; margin-bottom: 1rem; text-transform: uppercase;">Files from PC</h3>
-                            <div id="pc-file-list" style="text-align: left; margin-bottom: 1rem;"></div>
-                            <button onclick="fetchPcFiles()" class="secondary" style="font-size: 0.7rem; padding: 0.5rem;">Refresh List</button>
+
+                        <div class="progress-container" id="p-container">
+                            <div class="progress-bar" id="p-bar"></div>
+                        </div>
+                        <div id="status-text"></div>
+
+                        <button onclick="uploadFile()" id="upload-btn">Upload Files</button>
+                    </div>
+                    
+                    <div class="downloads-section">
+                        <h2>Files from PC</h2>
+                        <div id="pc-file-list" class="file-list">
+                            <p style="font-size: 0.8rem; color: #444;">No shared files yet</p>
                         </div>
                     </div>
                 </div>
+
                 <script>
-                    const regView = document.getElementById('registration-view');
-                    const upView = document.getElementById('upload-view');
-                    const dnInput = document.getElementById('dn-input');
-                    const dnDisplay = document.getElementById('device-display');
-                    const errMsg = document.getElementById('error-msg');
-                    const regBtn = document.getElementById('reg-btn');
+                    const fileInput = document.getElementById('file-input');
+                    const fileLabel = document.getElementById('file-label');
                     const pContainer = document.getElementById('p-container');
                     const pBar = document.getElementById('p-bar');
                     const statusText = document.getElementById('status-text');
                     const uploadBtn = document.getElementById('upload-btn');
-                    const resetBtn = document.getElementById('reset-btn');
+                    const pcFileList = document.getElementById('pc-file-list');
 
-                    function checkRegistration() {
-                        const savedName = localStorage.getItem('drop-device-name');
-                        const urlParams = new URLSearchParams(window.location.search);
-                        const syncHint = urlParams.get('sync');
-
-                        if (savedName) {
-                            regView.style.display = 'none';
-                            upView.style.display = 'block';
-                            dnDisplay.innerText = savedName;
-                            fetchPcFiles();
-                        } else if (syncHint) {
-                            // Perfect! Zero-click sync
-                            dnInput.value = syncHint;
-                            registerDevice();
-                        } else {
-                            regView.style.display = 'block';
-                            upView.style.display = 'none';
-                            fetchKnownDevices();
-                        }
+                    function updateLabel() {
+                        const count = fileInput.files.length;
+                        fileLabel.innerText = count > 0 ? (count + ' file' + (count > 1 ? 's' : '') + ' selected') : 'Select or drop files';
                     }
 
-                    async function fetchKnownDevices() {
-                        const view = document.getElementById('known-devices-view');
-                        try {
-                            const res = await fetch('/known-devices');
-                            const devices = await res.json();
-                            if (devices.length > 0) {
-                                view.innerHTML = '<p style="margin-top: 1.5rem; font-size: 0.7rem; color: #444;">Quick Sync</p>' +
-                                    '<div style="display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center;">' +
-                                    devices.map(d => '<button class="secondary" style="width: auto; padding: 0.5rem; font-size: 0.7rem;" onclick="selectDevice(\\'' + d + '\\')">' + d + '</button>').join('') +
-                                    '</div>';
-                            }
-                        } catch (e) {}
-                    }
-
-                    function selectDevice(name) {
-                        dnInput.value = name;
-                        registerDevice();
-                    }
-
-                    async function registerDevice() {
-                        const name = dnInput.value.trim();
-                        if (!name) return;
-                        regBtn.disabled = true;
-                        errMsg.style.display = 'none';
-                        try {
-                            const res = await fetch('/check-device/' + encodeURIComponent(name));
-                            const data = await res.json();
-                            if (data.available) {
-                                localStorage.setItem('drop-device-name', name);
-                                checkRegistration();
-                            } else {
-                                errMsg.innerText = 'Name already taken';
-                                errMsg.style.display = 'block';
-                            }
-                        } catch (err) {
-                            errMsg.innerText = 'Server offline or error';
-                            errMsg.style.display = 'block';
-                        } finally {
-                            regBtn.disabled = false;
-                        }
-                    }
-
-                    async function fetchPcFiles() {
-                        const list = document.getElementById('pc-file-list');
-                        list.innerHTML = '<p style="color: #444; font-size: 0.75rem;">Updating...</p>';
+                    async function loadPcFiles() {
                         try {
                             const res = await fetch('/pc-files');
                             const files = await res.json();
                             if (files.length === 0) {
-                                list.innerHTML = '<p style="color: #444; font-size: 0.75rem;">No files available.</p>';
+                                pcFileList.innerHTML = '<p style="font-size: 0.8rem; color: #444;">No shared files yet</p>';
                                 return;
                             }
-                            list.innerHTML = files.map(f => \`
-                                <div class="pc-file-item">
-                                    <div style="flex: 1; overflow: hidden;">
-                                        <div style="font-size: 0.8rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">\${f.name}</div>
-                                        <div style="font-size: 0.65rem; color: #444;">\${f.size}</div>
+                            pcFileList.innerHTML = files.map(f => \`
+                                <a href="/download/\${encodeURIComponent(f.name)}" class="file-item" download>
+                                    <div class="file-info">
+                                        <div class="file-name">\${f.name}</div>
+                                        <div class="file-size">\${f.size}</div>
                                     </div>
-                                    <a href="/download/\${encodeURIComponent(f.name)}" download style="background: #fff; color: #000; text-decoration: none; padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.7rem; font-weight: 800;">GET</a>
-                                </div>
+                                    <div class="dl-icon">📥</div>
+                                </a>
                             \`).join('');
-                        } catch (err) {
-                            list.innerHTML = '<p style="color: #ff0000; font-size: 0.75rem;">Error.</p>';
+                        } catch (e) {
+                            console.error('Failed to load files', e);
                         }
                     }
 
                     function uploadFile() {
-                        const fileInput = document.getElementById('file-input');
                         if (fileInput.files.length === 0) return;
-                        const name = localStorage.getItem('drop-device-name');
+                        
                         const formData = new FormData();
                         for (let f of fileInput.files) formData.append('file', f);
-                        formData.append('device-name', name);
+                        formData.append('device-name', 'WebSync'); // Internal default
 
                         const xhr = new XMLHttpRequest();
                         xhr.open('POST', '/upload', true);
-                        xhr.setRequestHeader('device-name', name);
+                        xhr.setRequestHeader('device-name', 'WebSync');
+                        
                         pContainer.style.display = 'block';
                         uploadBtn.disabled = true;
+                        
                         xhr.upload.onprogress = (e) => {
                             if (e.lengthComputable) {
                                 const p = Math.round((e.loaded / e.total) * 100);
                                 pBar.style.width = p + '%';
-                                statusText.innerText = 'Sending: ' + p + '%';
+                                statusText.innerText = 'UPLOADING: ' + p + '%';
                             }
                         };
+
                         xhr.onload = () => {
-                            statusText.innerText = 'Uploaded!';
-                            setTimeout(() => {
-                                pContainer.style.display = 'none';
-                                pBar.style.width = '0%';
-                                statusText.innerText = '';
+                            if (xhr.status === 200) {
+                                statusText.innerText = 'COMPLETED!';
+                                setTimeout(() => {
+                                    pContainer.style.display = 'none';
+                                    pBar.style.width = '0%';
+                                    statusText.innerText = '';
+                                    uploadBtn.disabled = false;
+                                    fileInput.value = '';
+                                    updateLabel();
+                                }, 2000);
+                            } else {
+                                statusText.innerText = 'ERROR OCCURRED';
                                 uploadBtn.disabled = false;
-                                fileInput.value = '';
-                            }, 1500);
+                            }
                         };
                         xhr.send(formData);
                     }
 
-                    function clearRegistration() {
-                        if (confirm('Logout?')) {
-                            localStorage.removeItem('drop-device-name');
-                            location.reload();
-                        }
-                    }
-                    checkRegistration();
+                    // Initial load and polling
+                    loadPcFiles();
+                    setInterval(loadPcFiles, 5000);
                 </script>
             </body>
             </html>
@@ -343,7 +378,7 @@ function setupServer(mainWindow) {
     });
 
     return app.listen(PORT, '0.0.0.0', () => {
-        console.log(`Server running at http://0.0.0.0:\${PORT}`);
+        console.log(`Server running at http://0.0.0.0:${PORT}`);
     });
 }
 
