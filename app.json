@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "a29e6a83-2946-47c8-a027-594fd019d2f1"
+      }
+    },
+    "android": {
+      "package": "com.basitshahid.drop"
+    }
+  }
+}

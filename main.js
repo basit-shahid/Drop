@@ -1,7 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const { setupServer } = require('./server');
-const ip = require('ip');
 const cloudflared = require('cloudflared');
 const fs = require('fs');
 
@@ -52,10 +51,10 @@ async function startTunnel(port) {
 
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 400,
-        height: 680,
-        resizable: false,
-        maximizable: false,
+        width: 450,
+        height: 800,
+        resizable: true,
+        maximizable: true,
         icon: path.join(__dirname, 'logo.png'),
         backgroundColor: '#050505',
         webPreferences: {

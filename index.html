@@ -113,7 +113,10 @@
             <section class="log-section">
                 <div class="section-header">
                     <h2>TRANSFERS</h2>
-                    <span id="transfer-count">READY</span>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <button id="scroll-top-btn" class="action-btn secondary" style="padding: 0.4rem 0.8rem; font-size: 0.7rem; display: none;">🔝 QR</button>
+                        <span id="transfer-count">READY</span>
+                    </div>
                 </div>
                 <div class="file-list" id="file-list">
                     <div class="empty-state">
@@ -173,6 +176,11 @@
         const closeScannerBtn = document.getElementById('close-scanner-btn');
         const clientDownloadsSection = document.getElementById('client-downloads-section');
         const remoteFileList = document.getElementById('remote-file-list');
+        const scrollTopBtn = document.getElementById('scroll-top-btn');
+        
+        scrollTopBtn.addEventListener('click', () => {
+            document.querySelector('.status-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
         
         async function loadRemoteFiles() {
             if (!targetServerUrl) return;
@@ -399,14 +407,6 @@
             if (currentMode === 'local') updateConnectionUI();
         });
 
-        ipDisplay.addEventListener('click', () => {
-            if (localIPs.length > 1) {
-                currentIpIndex = (currentIpIndex + 1) % localIPs.length;
-                localUrl = `http://${localIPs[currentIpIndex]}:5000/`;
-                updateConnectionUI();
-            }
-        });
-
         ipcRenderer.on('public-url', (event, url) => {
             publicUrl = url;
             modeRemoteBtn.disabled = false;
@@ -428,6 +428,7 @@
             if (count === 0) fileList.innerHTML = '';
             count++;
             transferCount.innerText = `${count} FILE${count > 1 ? 'S' : ''}`;
+            scrollTopBtn.style.display = 'block'; // Show the scroll back button
             const item = document.createElement('div');
             item.className = 'file-item';
             item.title = 'Click to open folder';
@@ -441,7 +442,17 @@
             `;
             item.addEventListener('click', () => ipcRenderer.send('show-file', file.path));
             fileList.prepend(item);
-            item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            
+            // Auto scroll to transmitted files section
+            document.querySelector('.log-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+
+        ipDisplay.addEventListener('click', () => {
+            if (localIPs.length > 1 && currentMode === 'local') {
+                currentIpIndex = (currentIpIndex + 1) % localIPs.length;
+                localUrl = `http://${localIPs[currentIpIndex]}:5000/`;
+                updateConnectionUI();
+            }
         });
     </script>
 </body>
