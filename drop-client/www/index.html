@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>Drop - Mobile</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+</head>
+<body>
+    <div class="container mobile-only">
+        <header>
+            <h1>DROP</h1>
+            <p>Instant Mobile Sync</p>
+        </header>
+
+        <main>
+            <section class="status-card">
+                <div id="client-view" style="display: flex; flex-direction: column; width: 100%;">
+                    <div id="client-setup-view" class="client-setup">
+                        <div class="ip-info">
+                            <span class="label">CONNECT TO PC SERVER</span>
+                            <input type="text" id="server-url-input" class="neon-input" placeholder="e.g. 192.168.1.5:5000">
+                        </div>
+                        <div class="setup-actions">
+                            <button id="connect-btn" class="connect-btn">CONNECT NOW</button>
+                            <button id="start-scan-btn" class="scan-qr-btn">📸 SCAN QR CODE</button>
+                            <p class="hint">Enter address or scan from PC screen</p>
+                        </div>
+                    </div>
+
+                    <div id="client-upload-view" style="display: none; width: 100%;">
+                        <div class="upload-zone" id="drop-zone">
+                            <div class="upload-icon-circle">
+                                <span class="upload-icon">🚀</span>
+                            </div>
+                            <span class="label">CONNECTED TO PC</span>
+                            <span id="file-label" class="file-label">SELECT OR DROP FILES</span>
+                            <input type="file" id="file-input" multiple>
+                        </div>
+                        
+                        <div class="client-actions">
+                            <button id="upload-btn" class="action-btn">UPLOAD FILES</button>
+                        </div>
+
+                        <div id="client-status" class="client-status">READY FOR SYNC</div>
+                        
+                        <div id="client-downloads-section" class="downloads-section" style="margin-top: 2rem; display: none;">
+                            <h2 style="font-size: 0.9rem; color: var(--neon-magenta);">FILES FROM PC</h2>
+                            <div id="remote-file-list" class="file-list"></div>
+                        </div>
+
+                        <button id="disconnect-btn" class="disconnect-btn">DISCONNECT</button>
+                    </div>
+                </div>
+
+                <div id="scanner-overlay" class="scanner-overlay">
+                    <video id="scanner-video" playsinline></video>
+                    <div class="scanner-window">
+                        <div class="scanner-line"></div>
+                    </div>
+                    <div class="scanner-controls">
+                        <button id="close-scanner-btn" class="disconnect-btn">CANCEL SCAN</button>
+                    </div>
+                    <canvas id="scanner-canvas" style="display:none;"></canvas>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="mobile.js"></script>
+</body>
+</html>

@@ -4,13 +4,28 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const cors = require('cors');
-const { ipcMain } = require('electron');
+const ChatServer = require('./chat-server');
+const FileSecurityScanner = require('./file-security');
+
+// Initialize security scanner
+const securityScanner = new FileSecurityScanner();
+
+// Optional electron import for resilience
+let ipcMain;
+try {
+    const electron = require('electron');
+    ipcMain = electron.ipcMain;
+} catch (e) {
+    // Standard node execution
+}
+
 
 const app = express();
 const PORT = 5000;
 
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname))); // Serve static files from project root
 
 // Robust path handling
 const DOWNLOAD_BASE = path.join(os.homedir(), 'Documents', 'AndroidFiles');
@@ -67,7 +82,7 @@ function setupServer(mainWindow) {
         req.on('data', (chunk) => {
             received += chunk.length;
             const now = Date.now();
-            if (mainWindow && total && (now - lastUpdate > 100)) {
+            if (mainWindow && mainWindow.webContents && total && (now - lastUpdate > 100)) {
                 lastUpdate = now;
                 const progress = Math.round((received / total) * 100);
                 mainWindow.webContents.send('upload-progress', { 
@@ -81,26 +96,79 @@ function setupServer(mainWindow) {
             }
         });
         next();
-    }, upload.array('file'), (req, res) => {
+    }, upload.array('file'), async (req, res) => {
         if (!req.files || req.files.length === 0) return res.status(400).send('No files uploaded.');
 
         const deviceName = (req.headers['device-name'] || req.body['device-name'] || 'UnknownDevice').trim();
+        
+        const scanResults = {
+            safe: [],
+            blocked: [],
+            review: [],
+            errors: []
+        };
 
-        req.files.forEach(file => {
-            const info = {
-                filename: file.originalname,
-                device: deviceName,
-                path: file.path,
-                category: path.basename(path.dirname(file.path)),
-                time: new Date().toLocaleTimeString()
-            };
-            if (mainWindow) {
-                mainWindow.webContents.send('file-received', info);
-                mainWindow.webContents.send('device-activity', { name: deviceName });
+        // Security scan each file
+        for (const file of req.files) {
+            try {
+                const scanResult = await securityScanner.scanFile(file.path, file.originalname);
+                
+                if (scanResult.verdict === 'BLOCKED') {
+                    scanResults.blocked.push({
+                        filename: file.originalname,
+                        reasons: scanResult.reasons
+                    });
+                    // Quarantine the file
+                    securityScanner.quarantineFile(file.path, file.originalname, scanResult.reasons.join('; '));
+                    continue; // Skip processing this file
+                } else if (scanResult.verdict === 'REVIEW') {
+                    scanResults.review.push({
+                        filename: file.originalname,
+                        reasons: scanResult.reasons
+                    });
+                    // Still process but flag it
+                } else {
+                    scanResults.safe.push(file.originalname);
+                }
+
+                // Only send info for files that passed security
+                if (scanResult.verdict !== 'BLOCKED') {
+                    const info = {
+                        filename: file.originalname,
+                        device: deviceName,
+                        path: file.path,
+                        category: path.basename(path.dirname(file.path)),
+                        time: new Date().toLocaleTimeString(),
+                        securityStatus: scanResult.verdict
+                    };
+                    if (mainWindow && mainWindow.webContents) {
+                        mainWindow.webContents.send('file-received', info);
+                        mainWindow.webContents.send('device-activity', { name: deviceName });
+                    }
+                }
+            } catch (err) {
+                securityScanner.log('ERROR', 'Scan error', { filename: file.originalname, error: err.message });
+                scanResults.errors.push({
+                    filename: file.originalname,
+                    error: err.message
+                });
+                // Remove file on error
+                try {
+                    fs.unlinkSync(file.path);
+                } catch (e) { }
             }
-        });
+        }
 
-        res.status(200).json({ message: `${req.files.length} files uploaded` });
+        res.status(200).json({ 
+            message: 'File processing completed',
+            summary: {
+                safe: scanResults.safe.length,
+                blocked: scanResults.blocked.length,
+                review: scanResults.review.length,
+                errors: scanResults.errors.length
+            },
+            details: scanResults
+        });
     });
 
     app.get('/manifest.json', (req, res) => {
@@ -120,6 +188,11 @@ function setupServer(mainWindow) {
         });
     });
 
+    app.get('/security/report', (req, res) => {
+        const report = securityScanner.getSecurityReport();
+        res.status(200).json(report);
+    });
+
     app.get('/sw.js', (req, res) => {
         res.set('Content-Type', 'application/javascript');
         res.send("self.addEventListener('fetch', function(event) {});"); // Basic SW to enable PWA
@@ -127,6 +200,21 @@ function setupServer(mainWindow) {
 
     app.get('/logo.png', (req, res) => {
         res.sendFile(path.join(__dirname, 'logo.png'));
+    });
+
+    // Chat routes
+    app.get('/chat', (req, res) => {
+        res.sendFile(path.join(__dirname, 'chat.html'));
+    });
+
+    app.get('/chat.js', (req, res) => {
+        res.set('Content-Type', 'application/javascript');
+        res.sendFile(path.join(__dirname, 'chat.js'));
+    });
+
+    app.get('/chat-style.css', (req, res) => {
+        res.set('Content-Type', 'text/css');
+        res.sendFile(path.join(__dirname, 'chat-style.css'));
     });
 
     app.get('/', (req, res) => {
@@ -265,6 +353,7 @@ function setupServer(mainWindow) {
                         <div id="status-text"></div>
 
                         <button onclick="uploadFile()" id="upload-btn">Upload Files</button>
+                        <button onclick="window.location.href='/chat'" style="background: linear-gradient(135deg, var(--neon-magenta), var(--neon-cyan)); margin-top: 1rem;">💬 Open Chat</button>
                     </div>
                     
                     <div class="downloads-section">
@@ -377,9 +466,21 @@ function setupServer(mainWindow) {
         else res.status(404).send('Not found');
     });
 
-    return app.listen(PORT, '0.0.0.0', () => {
-        console.log(`Server running at http://0.0.0.0:${PORT}`);
-    });
+    const chatServer = new ChatServer(app, PORT);
+    
+    // Return the HTTP server
+    return chatServer.start();
 }
 
 module.exports = { setupServer, PORT };
+
+// Standalone execution for development/testing
+if (require.main === module) {
+    try {
+        const server = setupServer(null);
+        console.log('[Server] Started in standalone mode on port ' + PORT);
+    } catch (err) {
+        console.error('[Server] Failed to start:', err);
+        process.exit(1);
+    }
+}

@@ -1,0 +1,1032 @@
+class ChatClient {
+    constructor() {
+        this.socket = null;
+        this.currentUser = null;
+        this.currentConversation = 'general';
+        this.conversations = new Map();
+        this.typingTimeout = null;
+        this.encryptionKey = null;
+        this.groupKey = null;
+        this.init();
+    }
+
+    init() {
+        this.setupElements();
+        this.setupEventListeners();
+        this.showUsernameModal();
+    }
+
+    setupElements() {
+        this.usernameModal = document.getElementById('username-modal');
+        this.usernameInput = document.getElementById('username-input');
+        this.joinBtn = document.getElementById('join-btn');
+        
+        this.messageInput = document.getElementById('message-input');
+        this.sendBtn = document.getElementById('send-btn');
+        this.attachmentBtn = document.getElementById('attachment-btn');
+        
+        this.messagesContainer = document.getElementById('messages-container');
+        this.conversationsList = document.getElementById('conversations-list');
+        this.usersList = document.getElementById('users-list');
+        
+        this.chatTitle = document.getElementById('chat-title');
+        this.chatSubtitle = document.getElementById('chat-subtitle');
+        this.headerAvatar = document.getElementById('header-avatar');
+        this.typingIndicator = document.getElementById('typing-indicator');
+        
+        this.addChatBtn = document.getElementById('add-chat-btn');
+        this.menuBtn = document.getElementById('menu-btn');
+        this.infoBtnEl = document.getElementById('info-btn');
+        this.usersSidebar = document.getElementById('users-sidebar');
+        this.closeUsersBtn = document.getElementById('close-users-btn');
+        this.searchInput = document.getElementById('search-input');
+
+        // Verify critical elements are loaded
+        const missingElements = [];
+        if (!this.usernameModal) missingElements.push('username-modal');
+        if (!this.joinBtn) missingElements.push('join-btn');
+        if (!this.messagesContainer) missingElements.push('messages-container');
+        if (!this.socket && missingElements.length > 0) {
+            console.warn('[Chat] Missing DOM elements:', missingElements);
+        }
+        console.log('[Chat] ✅ DOM elements initialized');
+    }
+
+    setupEventListeners() {
+        this.joinBtn.addEventListener('click', () => this.joinChat());
+        this.usernameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.joinChat();
+        });
+
+        this.sendBtn.addEventListener('click', () => this.sendMessage());
+        this.messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.sendMessage();
+            }
+        });
+
+        this.messageInput.addEventListener('input', () => {
+            this.autoResizeInput();
+            this.emitTyping();
+        });
+
+        this.addChatBtn.addEventListener('click', () => this.showNewChatDialog());
+        this.menuBtn.addEventListener('click', () => this.showMenu());
+        this.infoBtnEl.addEventListener('click', () => this.toggleUsersSidebar());
+        this.closeUsersBtn.addEventListener('click', () => this.hideUsersSidebar());
+        this.searchInput.addEventListener('input', (e) => this.filterConversations(e.target.value));
+        this.attachmentBtn.addEventListener('click', () => this.handleAttachment());
+    }
+
+    showUsernameModal() {
+        this.usernameInput.focus();
+    }
+
+    async joinChat() {
+        const username = this.usernameInput.value.trim();
+        if (!username) {
+            alert('Please enter a username');
+            return;
+        }
+
+        // Check if ChatEncryption is available
+        if (typeof ChatEncryption === 'undefined') {
+            alert('❌ Error: Encryption module not loaded. Please refresh the page.');
+            return;
+        }
+
+        // Check if socket.io is available
+        if (typeof io === 'undefined') {
+            alert('❌ Error: Socket.IO not loaded. Please refresh the page.');
+            return;
+        }
+
+        try {
+            this.currentUser = {
+                username,
+                deviceId: this.generateDeviceId()
+            };
+
+            console.log('[Chat] Generating encryption keys...');
+            // Generate encryption key for this user session
+            this.encryptionKey = ChatEncryption.generateEncryptionKey();
+            console.log('[Chat] User encryption key generated');
+
+            // Generate group key for conversations
+            this.groupKey = await ChatEncryption.createGroupKey('general');
+            console.log('[Chat] Group encryption key generated');
+
+            this.connectSocket();
+            this.usernameModal.classList.add('hidden');
+        } catch (err) {
+            console.error('[Chat] Error during join:', err);
+            alert(`❌ Error: ${err.message}`);
+        }
+    }
+
+    connectSocket() {
+        console.log('[Chat] Connecting socket with encryption');
+        console.log('[Chat] Server URL:', window.location.origin);
+        
+        try {
+            this.socket = io(window.location.origin, {
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+                reconnectionAttempts: 5
+            });
+
+            this.setupSocketListeners();
+        } catch (err) {
+            console.error('[Chat] Socket connection error:', err);
+            alert(`❌ Failed to connect: ${err.message}`);
+        }
+    }
+
+    setupSocketListeners() {
+        this.socket.on('connect', () => {
+            console.log('[Chat] ✅ Connected to encrypted chat server, ID:', this.socket.id);
+            console.log('[Chat] Sending user-join event with data:', this.currentUser);
+            this.socket.emit('user-join', this.currentUser);
+            this.addSystemMessage('🔒 Connected with end-to-end encryption');
+        });
+
+        this.socket.on('connect_error', (error) => {
+            console.error('[Chat] Connection error:', error);
+            this.addSystemMessage(`⚠️ Connection error: ${error.message}`);
+        });
+
+        this.socket.on('disconnect', () => {
+            console.log('[Chat] Disconnected from server');
+            this.addSystemMessage('⚠️ Disconnected from server');
+        });
+
+        this.socket.on('user-joined', (data) => {
+            this.addSystemMessage(`${data.user.username} joined (${data.totalUsers} online)`);
+            this.addUserToList(data.user);
+        });
+
+        this.socket.on('message-received', async (message) => {
+            await this.handleReceivedMessage(message);
+        });
+
+        this.socket.on('message-history', async (messages) => {
+            for (const msg of messages) {
+                await this.handleReceivedMessage(msg);
+            }
+            this.scrollToBottom();
+        });
+
+        this.socket.on('conversations-list', (convos) => {
+            convos.forEach(conv => this.addConversationToList(conv));
+        });
+
+        this.socket.on('user-typing', (data) => {
+            this.showTypingIndicator(data);
+        });
+
+        this.socket.on('user-stop-typing', (data) => {
+            this.hideTypingIndicator(data);
+        });
+
+        this.socket.on('user-status-changed', (data) => {
+            this.updateUserStatus(data);
+        });
+
+        this.socket.on('user-left', (data) => {
+            this.addSystemMessage(`${data.username} left (${data.totalUsers} online)`);
+            this.removeUserFromList(data.userId);
+        });
+
+        this.socket.on('message-read-status', (data) => {
+            this.updateMessageReadStatus(data);
+        });
+
+        this.socket.on('chat-cleared', () => {
+            this.messagesContainer.innerHTML = '';
+            this.addSystemMessage('Chat history cleared');
+        });
+
+        this.socket.on('disconnect', () => {
+            this.addSystemMessage('⚠️ Disconnected from server');
+        });
+
+        this.socket.on('connect_error', (error) => {
+            console.error('Connection error:', error);
+            this.addSystemMessage(`Error: ${error.message}`);
+        });
+    }
+
+    async sendMessage() {
+        const text = this.messageInput.value.trim();
+        if (!text) return;
+
+        try {
+            const encryptedText = await ChatEncryption.encryptMessage(text, this.groupKey);
+
+            const message = {
+                text: encryptedText,
+                conversationId: this.currentConversation,
+                type: 'text',
+                encrypted: true
+            };
+
+            this.socket.emit('send-message', message);
+            this.messageInput.value = '';
+            this.messageInput.style.height = 'auto';
+            this.socket.emit('stop-typing', { conversationId: this.currentConversation });
+        } catch (err) {
+            console.error('Error sending message:', err);
+            this.addSystemMessage('❌ Error: Failed to encrypt message');
+        }
+    }
+
+    async handleReceivedMessage(message) {
+        try {
+            if (message.encrypted && message.text) {
+                message.text = await ChatEncryption.decryptMessage(message.text, this.groupKey);
+            }
+            this.displayMessage(message);
+        } catch (err) {
+            console.error('Error decrypting message:', err);
+            message.text = '[Encrypted message - decryption failed]';
+            this.displayMessage(message);
+        }
+    }
+
+    displayMessage(message) {
+        const isOwn = message.sender.id === this.socket.id;
+        const messageEl = document.createElement('div');
+        messageEl.className = `message ${isOwn ? 'sent' : 'received'}`;
+        messageEl.id = `msg_${message.id}`;
+
+        const time = new Date(message.timestamp).toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+
+        const avatar = message.sender.avatar;
+
+        messageEl.innerHTML = `
+            <div class="message-wrapper">
+                <div class="message-avatar" style="background: ${avatar}; background-size: cover;"></div>
+                <div class="message-content">
+                    ${!isOwn ? `<div class="message-sender">${message.sender.username}</div>` : ''}
+                    <div class="message-bubble">
+                        ${this.escapeHtml(message.text)}
+                    </div>
+                    <div class="message-time">${time}</div>
+                </div>
+            </div>
+        `;
+
+        this.messagesContainer.appendChild(messageEl);
+        this.scrollToBottom();
+
+        if (!isOwn) {
+            this.socket.emit('mark-read', { messageId: message.id });
+        }
+    }
+
+    addSystemMessage(text) {
+        const messageEl = document.createElement('div');
+        messageEl.style.cssText = 'text-align: center; padding: 12px; color: #888; font-size: 12px; font-style: italic;';
+        messageEl.textContent = text;
+        this.messagesContainer.appendChild(messageEl);
+        this.scrollToBottom();
+    }
+
+    addConversationToList(conversation) {
+        if (this.conversations.has(conversation.id)) return;
+        this.conversations.set(conversation.id, conversation);
+        this.renderConversation(conversation);
+    }
+
+    renderConversation(conversation) {
+        const convItem = document.createElement('div');
+        convItem.className = 'conversation-item';
+        convItem.id = `conv_${conversation.id}`;
+        if (conversation.id === this.currentConversation) convItem.classList.add('active');
+
+        const lastMsg = conversation.lastMessage;
+        const preview = lastMsg ? lastMsg.text.substring(0, 30) : 'No messages';
+        const time = lastMsg ? new Date(lastMsg.timestamp).toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        }) : '';
+
+        convItem.innerHTML = `
+            <div class="conversation-avatar">${conversation.name.substring(0, 2).toUpperCase()}</div>
+            <div class="conversation-info">
+                <div class="conversation-name">${conversation.name}</div>
+                <div class="conversation-preview">🔒 ${preview}</div>
+            </div>
+            <div class="conversation-time">${time}</div>
+        `;
+
+        convItem.addEventListener('click', () => this.switchConversation(conversation.id));
+
+        const existingItem = document.getElementById(`conv_${conversation.id}`);
+        if (existingItem) {
+            existingItem.replaceWith(convItem);
+        } else {
+            this.conversationsList.appendChild(convItem);
+        }
+    }
+
+    switchConversation(convId) {
+        if (this.currentConversation) {
+            const old = document.getElementById(`conv_${this.currentConversation}`);
+            if (old) old.classList.remove('active');
+            this.socket.emit('leave-conversation', this.currentConversation);
+        }
+
+        this.currentConversation = convId;
+        const conv = this.conversations.get(convId);
+
+        const item = document.getElementById(`conv_${convId}`);
+        if (item) item.classList.add('active');
+
+        this.chatTitle.textContent = conv?.name || 'General Chat';
+        this.chatSubtitle.textContent = '🔒 Encrypted';
+
+        this.messagesContainer.innerHTML = '';
+        this.socket.emit('join-conversation', convId);
+    }
+
+    addUserToList(user) {
+        const userItem = document.createElement('div');
+        userItem.className = 'user-item';
+        userItem.id = `user_${user.id}`;
+
+        userItem.innerHTML = `
+            <div class="conversation-avatar" style="width: 36px; height: 36px; background: ${user.avatar}; background-size: cover;"></div>
+            <div class="conversation-info" style="flex: 1;">
+                <div class="conversation-name">${user.username}</div>
+                <div class="user-status">${user.status}</div>
+            </div>
+        `;
+
+        const existing = document.getElementById(`user_${user.id}`);
+        if (existing) {
+            existing.replaceWith(userItem);
+        } else {
+            this.usersList.appendChild(userItem);
+        }
+    }
+
+    removeUserFromList(userId) {
+        const userItem = document.getElementById(`user_${userId}`);
+        if (userItem) userItem.remove();
+    }
+
+    updateUserStatus(data) {
+        const userItem = document.getElementById(`user_${data.userId}`);
+        if (userItem) {
+            const statusEl = userItem.querySelector('.user-status');
+            if (statusEl) statusEl.textContent = data.status;
+        }
+    }
+
+    showTypingIndicator(data) {
+        this.typingIndicator.style.display = 'flex';
+    }
+
+    hideTypingIndicator(data) {
+        this.typingIndicator.style.display = 'none';
+    }
+
+    updateMessageReadStatus(data) {
+        const msgEl = document.getElementById(`msg_${data.messageId}`);
+        if (msgEl) msgEl.classList.add('read');
+    }
+
+    emitTyping() {
+        this.socket.emit('typing', { conversationId: this.currentConversation });
+        clearTimeout(this.typingTimeout);
+        this.typingTimeout = setTimeout(() => {
+            this.socket.emit('stop-typing', { conversationId: this.currentConversation });
+        }, 1000);
+    }
+
+    autoResizeInput() {
+        this.messageInput.style.height = 'auto';
+        this.messageInput.style.height = Math.min(this.messageInput.scrollHeight, 100) + 'px';
+    }
+
+    scrollToBottom() {
+        setTimeout(() => {
+            this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+        }, 0);
+    }
+
+    toggleUsersSidebar() {
+        this.usersSidebar.classList.toggle('show');
+    }
+
+    hideUsersSidebar() {
+        this.usersSidebar.classList.remove('show');
+    }
+
+    showNewChatDialog() {
+        const name = prompt('Enter conversation name:');
+        if (name) {
+            const convId = `conv_${Date.now()}`;
+            const conversation = {
+                id: convId,
+                name,
+                createdAt: new Date(),
+                participants: [this.socket.id],
+                lastMessage: null
+            };
+            this.addConversationToList(conversation);
+            this.switchConversation(convId);
+        }
+    }
+
+    showMenu() {
+        alert('💬 Drop Chat - Secure Messaging Only\n(Audio/Video calls removed)');
+    }
+
+    filterConversations(query) {
+        const items = document.querySelectorAll('.conversation-item');
+        items.forEach(item => {
+            const text = item.textContent.toLowerCase();
+            item.style.display = text.includes(query.toLowerCase()) ? '' : 'none';
+        });
+    }
+
+    handleAttachment() {
+        alert('File sharing coming soon!');
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    generateDeviceId() {
+        let deviceId = localStorage.getItem('deviceId');
+        if (!deviceId) {
+            deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            localStorage.setItem('deviceId', deviceId);
+        }
+        return deviceId;
+    }
+}
+
+    showUsernameModal() {
+        this.usernameInput.focus();
+    }
+
+    joinChat() {
+        const username = this.usernameInput.value.trim();
+        if (!username) {
+            alert('Please enter a username');
+            return;
+        }
+
+        this.currentUser = {
+            username,
+            deviceId: this.generateDeviceId()
+        };
+
+        this.connectSocket();
+        this.usernameModal.classList.add('hidden');
+    }
+
+    connectSocket() {
+        console.log('[Chat] Connecting socket to', window.location.origin);
+        this.socket = io(window.location.origin, {
+            transports: ['websocket', 'polling']
+        });
+
+        this.setupSocketListeners();
+    }
+
+    setupSocketListeners() {
+        this.socket.on('connect', () => {
+            console.log('Connected to chat server');
+            this.socket.emit('user-join', this.currentUser);
+            this.addSystemMessage('You joined the chat');
+        });
+
+        this.socket.on('user-joined', (data) => {
+            this.addSystemMessage(`${data.user.username} joined (${data.totalUsers} online)`);
+            this.addUserToList(data.user);
+        });
+
+        this.socket.on('message-received', (message) => {
+            this.displayMessage(message);
+        });
+
+        this.socket.on('message-history', (messages) => {
+            messages.forEach(msg => this.displayMessage(msg));
+            this.scrollToBottom();
+        });
+
+        this.socket.on('conversations-list', (convos) => {
+            convos.forEach(conv => this.addConversationToList(conv));
+        });
+
+        this.socket.on('user-typing', (data) => {
+            this.showTypingIndicator(data);
+        });
+
+        this.socket.on('user-stop-typing', (data) => {
+            this.hideTypingIndicator(data);
+        });
+
+        this.socket.on('user-status-changed', (data) => {
+            this.updateUserStatus(data);
+        });
+
+        this.socket.on('user-left', (data) => {
+            this.addSystemMessage(`${data.username} left (${data.totalUsers} online)`);
+            this.removeUserFromList(data.userId);
+        });
+
+        this.socket.on('message-read-status', (data) => {
+            this.updateMessageReadStatus(data);
+        });
+
+        this.socket.on('chat-cleared', () => {
+            this.messagesContainer.innerHTML = '';
+            this.addSystemMessage('Chat history cleared');
+        });
+
+        this.socket.on('disconnect', () => {
+            this.addSystemMessage('Disconnected from server');
+        });
+
+        this.socket.on('connect_error', (error) => {
+            console.error('Connection error:', error);
+            this.addSystemMessage(`Error: ${error.message}`);
+        });
+
+        // Call signaling handlers
+        this.socket.on('incoming-call', (data) => this.onIncomingCall(data));
+        this.socket.on('call-accepted', (data) => this.onCallAccepted(data));
+        this.socket.on('call-declined', (data) => this.onCallDeclined(data));
+        this.socket.on('call-offer', (data) => this.onCallOffer(data));
+        this.socket.on('call-answer', (data) => this.onCallAnswer(data));
+        this.socket.on('call-ice-candidate', (data) => this.onCallIceCandidate(data));
+        this.socket.on('call-ended', (data) => this.onCallEnded(data));
+    }
+
+    async onIncomingCall(data) {
+// Initialize chat when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    new ChatClient();
+});
+        this.incomingCallFrom = data.callerId;
+        this.callType = data.callType || 'audio';
+        this.showCallOverlay(`Incoming ${this.callType} call from ${data.caller.username}`, true);
+    }
+
+    async acceptIncomingCall() {
+        if (!this.incomingCallFrom) return;
+        this.socket.emit('call-accept', { targetUserId: this.incomingCallFrom, callType: this.callType, conversationId: this.currentConversation });
+        await this.startLocalMedia();
+        await this.createPeerConnection(true);
+    }
+
+    declineIncomingCall() {
+        if (!this.incomingCallFrom) return;
+        this.socket.emit('call-decline', { targetUserId: this.incomingCallFrom, conversationId: this.currentConversation });
+        this.hideCallOverlay();
+    }
+
+    async onCallAccepted(data) {
+        // Caller was accepted; start negotiation
+        await this.startLocalMedia();
+        await this.createPeerConnection(false);
+    }
+
+    async createPeerConnection(isAnswerer) {
+        const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+        this.pc = new RTCPeerConnection(config);
+
+        this.pc.onicecandidate = (e) => {
+            if (e.candidate) {
+                this.socket.emit('call-ice-candidate', { targetUserId: this.callTargetId || this.incomingCallFrom, candidate: e.candidate, conversationId: this.currentConversation });
+            }
+        };
+
+        this.pc.ontrack = (e) => {
+            if (this.remoteVideo) this.remoteVideo.srcObject = e.streams[0];
+        };
+
+        if (this.localStream) {
+            for (const track of this.localStream.getTracks()) {
+                this.pc.addTrack(track, this.localStream);
+            }
+        }
+
+        if (!isAnswerer) {
+            const offer = await this.pc.createOffer();
+            await this.pc.setLocalDescription(offer);
+            this.socket.emit('call-offer', { targetUserId: this.callTargetId, sdp: offer, callType: this.callType, conversationId: this.currentConversation });
+        }
+    }
+
+    async onCallOffer(data) {
+        // Caller sent offer to us
+        this.callTargetId = data.callerId;
+        await this.startLocalMedia();
+        await this.createPeerConnection(true);
+        await this.pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        const answer = await this.pc.createAnswer();
+        await this.pc.setLocalDescription(answer);
+        this.socket.emit('call-answer', { targetUserId: data.callerId, sdp: answer, conversationId: this.currentConversation });
+    }
+
+    async onCallAnswer(data) {
+        if (this.pc && data.sdp) {
+            await this.pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        }
+    }
+
+    async onCallIceCandidate(data) {
+        if (this.pc && data.candidate) {
+            try {
+                await this.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            } catch (e) {
+                console.warn('Failed to add ICE candidate', e);
+            }
+        }
+    }
+
+    onCallDeclined(data) {
+        this.addSystemMessage('Call declined');
+        this.hideCallOverlay();
+    }
+
+    onCallEnded(data) {
+        this.addSystemMessage('Call ended');
+        this.endCall();
+    }
+
+    async startLocalMedia() {
+        try {
+            const constraints = this.callType === 'video' ? { audio: true, video: true } : { audio: true };
+            this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+            if (this.localVideo) this.localVideo.srcObject = this.localStream;
+        } catch (e) {
+            alert('Microphone/camera access denied or unavailable');
+            throw e;
+        }
+    }
+
+    async endCall() {
+        if (this.pc) {
+            try { this.pc.close(); } catch (e) {}
+            this.pc = null;
+        }
+        if (this.localStream) {
+            this.localStream.getTracks().forEach(t => t.stop());
+            this.localStream = null;
+        }
+        if (this.callTargetId) {
+            this.socket.emit('call-end', { targetUserId: this.callTargetId, conversationId: this.currentConversation });
+        }
+        this.hideCallOverlay();
+    }
+
+    showCallOverlay(title, incoming = false) {
+        if (this.callOverlay) {
+            this.callOverlay.hidden = false;
+            if (this.callTitle) this.callTitle.textContent = title;
+            if (this.callStatus) this.callStatus.textContent = incoming ? 'Incoming' : 'Connecting...';
+            const incomingActions = document.getElementById('incoming-call-actions');
+            const activeActions = document.getElementById('active-call-actions');
+            if (incomingActions) incomingActions.hidden = !incoming;
+            if (activeActions) activeActions.hidden = incoming;
+        }
+    }
+
+    hideCallOverlay() {
+        if (this.callOverlay) {
+            this.callOverlay.hidden = true;
+            const incomingActions = document.getElementById('incoming-call-actions');
+            const activeActions = document.getElementById('active-call-actions');
+            if (incomingActions) incomingActions.hidden = true;
+            if (activeActions) activeActions.hidden = true;
+        }
+    }
+
+    setSelectedCallTarget(userId, username) {
+        this.selectedCallTargetId = userId;
+        this.selectedCallTargetName = username;
+        console.log('[Chat] setSelectedCallTarget:', userId, username);
+        // Highlight selected user in UI
+        try {
+            const prev = this.usersList.querySelector('.user-item.selected');
+            if (prev) prev.classList.remove('selected');
+            const el = document.getElementById(`user_${userId}`);
+            if (el) el.classList.add('selected');
+        } catch (e) {
+            console.warn('Failed to highlight selected user', e);
+        }
+        this.addSystemMessage(`Call target selected: ${username}`);
+    }
+
+
+    displayMessage(message) {
+        const isOwn = message.sender.id === this.socket.id;
+        const messageEl = document.createElement('div');
+        messageEl.className = `message ${isOwn ? 'sent' : 'received'}`;
+        messageEl.id = `msg_${message.id}`;
+
+        const time = new Date(message.timestamp).toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+
+        const avatar = message.sender.avatar;
+        const avatarColor = avatar.color;
+        const avatarInitials = avatar.initials;
+
+        messageEl.innerHTML = `
+            <div class="message-wrapper">
+                <div class="message-avatar" style="background: linear-gradient(135deg, #${avatarColor}, #${avatarColor}d0)">
+                    ${avatarInitials}
+                </div>
+                <div class="message-content">
+                    ${!isOwn ? `<div class="message-sender">${message.sender.username}</div>` : ''}
+                    <div class="message-bubble">
+                        ${this.escapeHtml(message.text)}
+                    </div>
+                    <div class="message-time">
+                        ${time}
+                        ${isOwn ? '<div class="read-receipt"></div>' : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        this.messagesContainer.appendChild(messageEl);
+        this.scrollToBottom();
+
+        // Mark as read after a delay
+        setTimeout(() => {
+            if (message.sender.id !== this.socket.id) {
+                this.socket.emit('message-read', message.id);
+            }
+        }, 500);
+    }
+
+    addSystemMessage(text) {
+        const messageEl = document.createElement('div');
+        messageEl.style.cssText = `
+            text-align: center;
+            padding: 12px;
+            color: var(--text-dim);
+            font-size: 12px;
+            font-style: italic;
+        `;
+        messageEl.textContent = text;
+        this.messagesContainer.appendChild(messageEl);
+        this.scrollToBottom();
+    }
+
+    addConversationToList(conversation) {
+        if (this.conversations.has(conversation.id)) return;
+
+        this.conversations.set(conversation.id, conversation);
+        this.renderConversation(conversation);
+    }
+
+    renderConversation(conversation) {
+        const convItem = document.createElement('div');
+        convItem.className = 'conversation-item';
+        convItem.id = `conv_${conversation.id}`;
+        if (conversation.id === this.currentConversation) convItem.classList.add('active');
+
+        const lastMsg = conversation.lastMessage;
+        const preview = lastMsg ? lastMsg.text.substring(0, 30) : 'No messages';
+        const time = lastMsg ? new Date(lastMsg.timestamp).toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        }) : '';
+
+        convItem.innerHTML = `
+            <div class="conversation-avatar">
+                ${conversation.name.substring(0, 2).toUpperCase()}
+            </div>
+            <div class="conversation-info">
+                <div class="conversation-name">${conversation.name}</div>
+                <div class="conversation-preview">${preview}</div>
+            </div>
+            <div class="conversation-time">${time}</div>
+        `;
+
+        convItem.addEventListener('click', () => this.switchConversation(conversation.id));
+
+        const existingItem = document.getElementById(`conv_${conversation.id}`);
+        if (existingItem) {
+            existingItem.replaceWith(convItem);
+        } else {
+            this.conversationsList.appendChild(convItem);
+        }
+    }
+
+    switchConversation(convId) {
+        if (this.currentConversation) {
+            const old = document.getElementById(`conv_${this.currentConversation}`);
+            if (old) old.classList.remove('active');
+            this.socket.emit('leave-conversation', this.currentConversation);
+        }
+
+        this.currentConversation = convId;
+        const conv = this.conversations.get(convId);
+
+        const item = document.getElementById(`conv_${convId}`);
+        if (item) item.classList.add('active');
+
+        this.chatTitle.textContent = conv?.name || 'General Chat';
+        this.chatSubtitle.textContent = `${conv?.participants?.length || 0} members`;
+
+        this.messagesContainer.innerHTML = '';
+        this.socket.emit('join-conversation', convId);
+
+        // Reload messages for this conversation (in a real app)
+    }
+
+    addUserToList(user) {
+        const userItem = document.createElement('div');
+        userItem.className = 'user-item';
+        userItem.id = `user_${user.id}`;
+
+        const avatar = user.avatar;
+        const avatarColor = avatar.color;
+        const avatarInitials = avatar.initials;
+
+        userItem.innerHTML = `
+            <div class="conversation-avatar" style="width: 36px; height: 36px; font-size: 11px; background: linear-gradient(135deg, #${avatarColor}, #${avatarColor}d0)">
+                ${avatarInitials}
+            </div>
+            <div class="conversation-info" style="flex: 1;">
+                <div class="conversation-name">${user.username}</div>
+                <div class="user-status ${user.status}">${user.status}</div>
+            </div>
+        `;
+
+        console.log('[Chat] addUserToList:', user.id, user.username);
+        userItem.setAttribute('role', 'button');
+        userItem.setAttribute('tabindex', '0');
+
+        const existing = document.getElementById(`user_${user.id}`);
+        if (existing) {
+            existing.replaceWith(userItem);
+        } else {
+            this.usersList.appendChild(userItem);
+        }
+
+        userItem.addEventListener('click', (e) => {
+            console.log('[Chat] user-item clicked:', user.id, e.target);
+            this.setSelectedCallTarget(user.id, user.username);
+        });
+        userItem.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                this.setSelectedCallTarget(user.id, user.username);
+            }
+        });
+    }
+
+    removeUserFromList(userId) {
+        const userItem = document.getElementById(`user_${userId}`);
+        if (userItem) userItem.remove();
+    }
+
+    updateUserStatus(data) {
+        const userItem = document.getElementById(`user_${data.userId}`);
+        if (userItem) {
+            const statusEl = userItem.querySelector('.user-status');
+            if (statusEl) {
+                statusEl.textContent = data.status;
+                statusEl.className = `user-status ${data.status}`;
+            }
+        }
+    }
+
+    showTypingIndicator(data) {
+        this.typingIndicator.style.display = 'flex';
+    }
+
+    hideTypingIndicator(data) {
+        this.typingIndicator.style.display = 'none';
+    }
+
+    updateMessageReadStatus(data) {
+        const msgEl = document.getElementById(`msg_${data.messageId}`);
+        if (msgEl) {
+            const receipt = msgEl.querySelector('.read-receipt');
+            if (receipt) {
+                receipt.style.background = '#00ff00';
+            }
+        }
+    }
+
+    emitTyping() {
+        this.socket.emit('typing', { conversationId: this.currentConversation });
+
+        clearTimeout(this.typingTimeout);
+        this.typingTimeout = setTimeout(() => {
+            this.socket.emit('stop-typing', { conversationId: this.currentConversation });
+        }, 1000);
+    }
+
+    autoResizeInput() {
+        this.messageInput.style.height = 'auto';
+        this.messageInput.style.height = Math.min(this.messageInput.scrollHeight, 100) + 'px';
+    }
+
+    scrollToBottom() {
+        setTimeout(() => {
+            this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+        }, 0);
+    }
+
+    toggleUsersSidebar() {
+        this.usersSidebar.classList.toggle('show');
+    }
+
+    hideUsersSidebar() {
+        this.usersSidebar.classList.remove('show');
+    }
+
+    showNewChatDialog() {
+        const name = prompt('Enter conversation name:');
+        if (name) {
+            const convId = `conv_${Date.now()}`;
+            const conversation = {
+                id: convId,
+                name,
+                createdAt: new Date(),
+                participants: [this.socket.id],
+                lastMessage: null
+            };
+            this.addConversationToList(conversation);
+            this.switchConversation(convId);
+        }
+    }
+
+    showMenu() {
+        const menu = confirm('Menu:\nPress OK for options or Cancel to dismiss');
+        if (menu) {
+            const action = prompt('Options:\n1. Change Status\n2. Clear Chat\n3. Exit');
+            if (action === '1') {
+                this.changeStatus();
+            } else if (action === '2') {
+                if (confirm('Clear chat history?')) {
+                    fetch('/api/chat/clear', { method: 'DELETE' });
+                }
+            }
+        }
+    }
+
+    changeStatus() {
+        const status = prompt('Status:\n1. Online\n2. Away\n3. Busy');
+        const statusMap = { '1': 'online', '2': 'away', '3': 'busy' };
+        if (status && statusMap[status]) {
+            this.socket.emit('status-update', statusMap[status]);
+        }
+    }
+
+    filterConversations(query) {
+        const items = document.querySelectorAll('.conversation-item');
+        items.forEach(item => {
+            const text = item.textContent.toLowerCase();
+            item.style.display = text.includes(query.toLowerCase()) ? '' : 'none';
+        });
+    }
+
+    handleAttachment() {
+        alert('File sharing coming soon!');
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    generateDeviceId() {
+        let deviceId = localStorage.getItem('deviceId');
+        if (!deviceId) {
+            deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            localStorage.setItem('deviceId', deviceId);
+        }
+        return deviceId;
+    }
+}
+
+// Initialize chat when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    new ChatClient();
+});

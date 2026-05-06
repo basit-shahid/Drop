@@ -1,5 +1,7 @@
 # 💧 Drop - Instant File Sync
 
+![Drop Logo](logo.png)
+
 **Drop** is a high-performance, neon-themed file synchronization ecosystem designed to bridge the gap between your PC and mobile devices. With a focus on speed, privacy, and minimalist aesthetics, Drop allows you to instantly transfer files across your local network or via remote tunnels.
 
 ## ✨ Features

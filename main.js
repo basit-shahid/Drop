@@ -51,8 +51,10 @@ async function startTunnel(port) {
 
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 450,
-        height: 800,
+        width: 520,
+        height: 780,
+        minWidth: 460,
+        minHeight: 700,
         resizable: true,
         maximizable: true,
         icon: path.join(__dirname, 'logo.png'),
@@ -71,7 +73,16 @@ function createWindow() {
     mainWindow.loadFile('index.html');
 
     // Setup the file server
-    setupServer(mainWindow);
+    try {
+        setupServer(mainWindow);
+    } catch (err) {
+        if (err && err.code === 'EADDRINUSE') {
+            console.error('[Server] Port 5000 is already in use. Start failed in this instance.');
+            console.error('[Server] Close other Drop/Node processes using port 5000, then restart app.');
+        } else {
+            throw err;
+        }
+    }
 
     // Start Cloudflare Tunnel
     startTunnel(5000);

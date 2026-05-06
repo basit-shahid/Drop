@@ -35,6 +35,7 @@ body {
     color: var(--text);
     overflow: hidden;
     height: 100vh;
+    padding: 10px;
     display: flex;
     justify-content: center;
     background-image: 
@@ -43,14 +44,16 @@ body {
 }
 
 .container {
-    width: 100%;
-    max-width: 100%;
-    height: 100%;
+    width: min(100%, 560px);
+    max-width: 560px;
+    height: calc(100vh - 20px);
     display: flex;
     flex-direction: column;
     border-left: 1px solid rgba(255, 255, 255, 0.05);
     border-right: 1px solid rgba(255, 255, 255, 0.05);
     background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,247,255,0.02) 100%);
+    border-radius: 22px;
+    overflow: hidden;
 }
 
 .drag-region {
@@ -64,13 +67,13 @@ body {
 }
 
 header {
-    padding: 3rem 1.5rem 1.5rem;
+    padding: 2.1rem 1.25rem 1rem;
     background: transparent;
     text-align: center;
 }
 
 h1 {
-    font-size: 2.5rem;
+    font-size: 2.1rem;
     font-weight: 800;
     letter-spacing: -0.05em;
     text-transform: uppercase;
@@ -90,7 +93,7 @@ header p {
 .header-actions {
     display: flex;
     gap: 0.75rem;
-    padding: 0 1.5rem 1.5rem;
+    padding: 0 1.25rem 0.9rem;
     justify-content: center;
 }
 
@@ -136,6 +139,7 @@ main {
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    padding: 0 1rem 0.95rem;
     overflow-y: auto;
     scroll-behavior: smooth;
 }
@@ -163,8 +167,8 @@ main::-webkit-scrollbar-thumb:hover {
 .status-card {
     background: var(--glass);
     border: 1px solid var(--border);
-    padding: 1rem;
-    border-radius: 24px;
+    padding: 0.9rem;
+    border-radius: 18px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -204,7 +208,7 @@ main::-webkit-scrollbar-thumb:hover {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 1.5rem;
+    gap: 1rem;
     width: 100%;
 }
 
@@ -236,8 +240,8 @@ main::-webkit-scrollbar-thumb:hover {
 
 #qr-canvas {
     display: block;
-    width: 200px;
-    height: 200px;
+    width: 180px;
+    height: 180px;
 }
 
 .ip-info {
@@ -519,7 +523,7 @@ main::-webkit-scrollbar-thumb:hover {
 .log-section {
     display: flex;
     flex-direction: column;
-    min-height: 50vh; /* Ensure it takes up decent space to scroll to */
+    min-height: 40vh;
 }
 
 .section-header {

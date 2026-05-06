@@ -7,6 +7,67 @@
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <style>
+        .chat-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 2000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+
+        .chat-overlay.show {
+            display: flex;
+        }
+
+        .chat-panel {
+            width: min(980px, 100%);
+            height: min(90vh, 900px);
+            border: 1px solid rgba(0, 247, 255, 0.35);
+            border-radius: 16px;
+            overflow: hidden;
+            background: #06080f;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .chat-panel-title {
+            color: #9efbff;
+            font-size: 0.85rem;
+            letter-spacing: 0.08em;
+            font-weight: 700;
+        }
+
+        .chat-close-btn {
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 8px;
+            background: transparent;
+            color: #ffffff;
+            padding: 6px 10px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .chat-frame {
+            flex: 1;
+            width: 100%;
+            border: 0;
+            background: #000;
+        }
+    </style>
 </head>
 <body>
     <div class="drag-region"></div>
@@ -22,6 +83,9 @@
             </button>
             <button id="open-folder-btn" class="action-btn secondary">
                 <span>📂</span> Files
+            </button>
+            <button id="chat-btn" class="action-btn secondary" title="Open the chat interface">
+                <span>💬</span> Chat
             </button>
         </div>
 
@@ -128,6 +192,16 @@
         </main>
     </div>
 
+    <div id="chat-overlay" class="chat-overlay" aria-hidden="true">
+        <div class="chat-panel" role="dialog" aria-modal="true" aria-label="Drop Chat">
+            <div class="chat-panel-header">
+                <span class="chat-panel-title">IN-APP CHAT</span>
+                <button id="chat-close-btn" class="chat-close-btn">Close</button>
+            </div>
+            <iframe id="chat-frame" class="chat-frame" title="Drop Chat"></iframe>
+        </div>
+    </div>
+
     <script>
         const { ipcRenderer } = require('electron');
         const QRCode = require('qrcode');
@@ -149,6 +223,10 @@
         const ipDisplay = document.getElementById('ip-display');
         const transferCount = document.getElementById('transfer-count');
         const openFolderBtn = document.getElementById('open-folder-btn');
+        const chatBtn = document.getElementById('chat-btn');
+        const chatOverlay = document.getElementById('chat-overlay');
+        const chatFrame = document.getElementById('chat-frame');
+        const chatCloseBtn = document.getElementById('chat-close-btn');
         const sendBtn = document.getElementById('send-btn');
         const globalProgress = document.getElementById('global-progress');
         const progressDevice = document.getElementById('progress-device');
@@ -390,9 +468,36 @@
             }
         }
 
+        function getServerBaseUrl() {
+            return currentMode === 'remote'
+                ? publicUrl
+                : localUrl || publicUrl || 'http://127.0.0.1:5000/';
+        }
+
+        function openChat() {
+            const chatUrl = 'http://127.0.0.1:5000/chat';
+            chatFrame.src = chatUrl;
+            chatOverlay.classList.add('show');
+            chatOverlay.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeChat() {
+            chatOverlay.classList.remove('show');
+            chatOverlay.setAttribute('aria-hidden', 'true');
+            chatFrame.src = '';
+        }
+
         clientUploadBtn.addEventListener('click', uploadFromPC);
         openFolderBtn.addEventListener('click', () => ipcRenderer.send('open-folder'));
         sendBtn.addEventListener('click', () => ipcRenderer.send('select-files-to-phone'));
+        chatBtn.addEventListener('click', openChat);
+        chatCloseBtn.addEventListener('click', closeChat);
+        chatOverlay.addEventListener('click', (e) => {
+            if (e.target === chatOverlay) closeChat();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && chatOverlay.classList.contains('show')) closeChat();
+        });
 
         ipcRenderer.on('files-sent-to-phone', () => alert('Files ready for Phone download!'));
 
