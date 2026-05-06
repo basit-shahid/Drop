@@ -166,7 +166,12 @@ class ChatClient {
             console.log('[Chat] ✅ Connected to encrypted chat server, ID:', this.socket.id);
             console.log('[Chat] 📤 Sending user-join event with data:', this.currentUser);
             this.socket.emit('user-join', this.currentUser);
-            this.addSystemMessage('🔒 Connected with end-to-end encryption');
+            
+            if (!ChatEncryption.isSecureContext()) {
+                this.addSystemMessage('⚠️ LOW SECURITY MODE: encryption is active but using fallback due to insecure connection (HTTP). Use HTTPS for maximum security.');
+            } else {
+                this.addSystemMessage('🔒 Connected with end-to-end encryption');
+            }
         });
 
         this.socket.on('connect_error', (error) => {

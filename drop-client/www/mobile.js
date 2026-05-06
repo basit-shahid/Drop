@@ -117,9 +117,21 @@ const startScanBtn = document.getElementById('start-scan-btn');
 const scannerOverlay = document.getElementById('scanner-overlay');
 const scannerVideo = document.getElementById('scanner-video');
 const scannerCanvas = document.getElementById('scanner-canvas');
-const closeScannerBtn = document.getElementById('close-scanner-btn');
 const clientDownloadsSection = document.getElementById('client-downloads-section');
 const remoteFileList = document.getElementById('remote-file-list');
+const openChatBtn = document.getElementById('open-chat-btn');
+
+// Handle Share Intent from Android
+window.addEventListener('shareIntent', (event) => {
+    console.log('[Native] Share intent received:', event.detail);
+    const uris = event.detail.uris;
+    if (uris && uris.length > 0) {
+        // In a real app, we'd use Capacitor Filesystem to read these URIs
+        // For now, we notify the user we caught the intent
+        clientStatus.innerText = `📲 RECEIVED ${uris.length} SHARED FILE(S)`;
+        alert(`Shared files detected! To upload them, please select them from the file picker in the Drop app. (Direct native-to-web sharing requires additional plugin configuration)`);
+    }
+});
 
 async function loadRemoteFiles() {
     if (!targetServerUrl) return;
@@ -205,6 +217,15 @@ function handleConnect(url) {
     loadRemoteFiles();
     if (remotePollInterval) clearInterval(remotePollInterval);
     remotePollInterval = setInterval(loadRemoteFiles, 5000);
+
+    // Show Chat Button
+    if (openChatBtn) {
+        openChatBtn.style.display = 'block';
+        openChatBtn.onclick = () => {
+            const chatUrl = targetServerUrl + 'chat';
+            window.open(chatUrl, '_blank');
+        };
+    }
 }
 
 startScanBtn.addEventListener('click', startScanner);
