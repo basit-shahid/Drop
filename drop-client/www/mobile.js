@@ -117,6 +117,7 @@ const startScanBtn = document.getElementById('start-scan-btn');
 const scannerOverlay = document.getElementById('scanner-overlay');
 const scannerVideo = document.getElementById('scanner-video');
 const scannerCanvas = document.getElementById('scanner-canvas');
+const closeScannerBtn = document.getElementById('close-scanner-btn');
 const clientDownloadsSection = document.getElementById('client-downloads-section');
 const remoteFileList = document.getElementById('remote-file-list');
 const openChatBtn = document.getElementById('open-chat-btn');
