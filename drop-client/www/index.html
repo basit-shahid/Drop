@@ -602,29 +602,27 @@
         const baseUrl = normalizeServerUrl(rawAddress);
         setStatus(`🔌 connecting to ${baseUrl} ...`);
         try {
-            const test = await fetch(`${baseUrl}/ping`, {
+            // We use /pc-files as a health check since /ping may not exist on the server
+            const test = await fetch(`${baseUrl}/pc-files`, {
                 method: 'GET',
                 headers: { 'Cache-Control': 'no-cache' }
             });
             if (!test.ok) throw new Error(`HTTP ${test.status}`);
-            const data = await test.json();
-            if(data.status === 'ready') {
-                currentServerUrl = baseUrl;
-                activeConnection = true;
-                // switch UI
-                setupView.style.display = 'none';
-                uploadView.style.display = 'block';
-                setStatus(`🔗 Connected to ${currentServerUrl}`);
-                // start polling files every 3 sec
-                if(pollingInterval) clearInterval(pollingInterval);
-                await fetchRemoteFileList();
-                pollingInterval = setInterval(() => {
-                    if(activeConnection) fetchRemoteFileList();
-                }, 3400);
-                return true;
-            } else {
-                throw new Error("Server not ready");
-            }
+            
+            // If it didn't throw, we assume connected!
+            currentServerUrl = baseUrl;
+            activeConnection = true;
+            // switch UI
+            setupView.style.display = 'none';
+            uploadView.style.display = 'block';
+            setStatus(`🔗 Connected to ${currentServerUrl}`);
+            // start polling files every 3 sec
+            if(pollingInterval) clearInterval(pollingInterval);
+            await fetchRemoteFileList();
+            pollingInterval = setInterval(() => {
+                if(activeConnection) fetchRemoteFileList();
+            }, 3400);
+            return true;
         } catch(err) {
             setStatus(`Connection failed: ${err.message}`, true);
             activeConnection = false;
