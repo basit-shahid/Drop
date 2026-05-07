@@ -206,10 +206,20 @@ function tick() {
     if (scanning) requestAnimationFrame(tick);
 }
 
-function handleConnect(url) {
+async function handleConnect(url) {
     if (!url) return;
     if (!url.startsWith('http')) url = 'http://' + url;
     if (!url.endsWith('/')) url += '/';
+    
+    // Verify connection using /pc-files as health check
+    try {
+        const test = await fetch(url + 'pc-files', { method: 'GET', headers: { 'Cache-Control': 'no-cache' } });
+        if (!test.ok) throw new Error(`HTTP ${test.status}`);
+    } catch(err) {
+        alert("Could not connect to PC. Make sure the IP and Port are correct, and the PC server is running.");
+        return;
+    }
+
     targetServerUrl = url;
     clientSetupView.style.display = 'none';
     clientUploadView.style.display = 'block';
